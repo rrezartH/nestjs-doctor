@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  40 built-in rules across <b>security</b>, <b>performance</b>, <b>correctness</b>, and <b>architecture</b>. Outputs a <b>0-100 score</b> with actionable diagnostics. Zero config. Monorepo support. Catches the anti-patterns that AI-generated code introduce (slop code).
+  43 built-in rules across <b>security</b>, <b>performance</b>, <b>correctness</b>, <b>architecture</b>, and <b>schema</b>. Outputs a <b>0-100 score</b> with actionable diagnostics. Zero config. Monorepo support. Catches the anti-patterns that AI-generated code introduce (slop code).
 </p>
 
 ---
@@ -46,7 +46,7 @@ npx nestjs-doctor@latest . --verbose
 npx nestjs-doctor@latest . --report
 ```
 
-Self-contained HTML file with four sections: score summary, source-level diagnostics with code viewer, interactive module graph, and a custom rule playground. Opens in your browser.
+Self-contained HTML file with five sections: score summary, source-level diagnostics with code viewer, interactive module graph, schema ER diagram, and a custom rule playground. Opens in your browser.
 
 ![Module Graph](https://nestjs.doctor/module-graph.png)
 
@@ -60,7 +60,7 @@ Install [NestJS Doctor](https://marketplace.visualstudio.com/items?itemName=rolo
 npm install -D nestjs-doctor
 ```
 
-Same 40 rules as the CLI, surfaced as inline diagnostics in the editor and in the Problems panel. Files are scanned on open and on save with a configurable debounce.
+Same 43 rules as the CLI, surfaced as inline diagnostics in the editor and in the Problems panel. Files are scanned on open and on save with a configurable debounce.
 
 Use `NestJS Doctor: Scan Project` from the command palette to trigger a full scan manually.
 
@@ -189,7 +189,7 @@ import type { RuleContext } from "nestjs-doctor";
 export const noTodoComments = {
   meta: {
     id: "no-todo-comments",
-    category: "correctness",        // "security" | "performance" | "correctness" | "architecture"
+    category: "correctness",        // "security" | "performance" | "correctness" | "architecture" | "schema"
     severity: "warning",            // "error" | "warning" | "info"
     description: "TODO comments should be resolved before merging",
     help: "Replace the TODO with an implementation or open an issue.",
@@ -248,6 +248,19 @@ Output includes a combined score and a per-project breakdown.
 
 ---
 
+## Schema Analysis
+
+Auto-detected from Prisma schema files (`schema.prisma`) or TypeORM entity decorators (`@Entity()`). When a schema is found, nestjs-doctor extracts entity-relationship data and:
+
+- Renders an **interactive ER diagram** in the Schema tab of the HTML report (sidebar entity tree + canvas diagram + problems panel)
+- Runs **3 schema-specific rules** covering primary keys, timestamps, and cascade configuration
+
+Supported ORMs: **Prisma**, **TypeORM**.
+
+See the [schema rules documentation](https://nestjs.doctor/docs/rules/schema) for the full rule list.
+
+---
+
 ## Scoring
 
 Weighted by severity and category, normalized by file count:
@@ -256,7 +269,8 @@ Weighted by severity and category, normalized by file count:
 |----------|--------|-|----------|------------|
 | error | 3.0 | | security | 1.5x |
 | warning | 1.5 | | correctness | 1.3x |
-| info | 0.5 | | architecture | 1.0x |
+| info | 0.5 | | schema | 1.1x |
+| | | | architecture | 1.0x |
 | | | | performance | 0.8x |
 
 | Score | Label |
@@ -287,7 +301,7 @@ mono.combined;      // Merged DiagnoseResult
 
 ---
 
-## Rules (40)
+## Rules (43)
 
 ### Security (9)
 
@@ -349,4 +363,11 @@ mono.combined;      // Merged DiagnoseResult
 | `no-unused-module-exports` | info | Module exports unused by importers |
 | `no-orphan-modules` | info | Module never imported by any other module |
 
+### Schema (3)
+
+| Rule | Severity | What it catches |
+|------|----------|-----------------|
+| `schema/require-primary-key` | error | Entity without a primary key column |
+| `schema/require-timestamps` | warning | Entity missing createdAt/updatedAt columns |
+| `schema/require-cascade-rule` | info | Relation missing explicit onDelete behavior |
 

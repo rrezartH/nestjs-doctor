@@ -29,6 +29,9 @@ import { noRequestScopeAbuse } from "./performance/no-request-scope-abuse.js";
 import { noSyncIo } from "./performance/no-sync-io.js";
 import { noUnusedModuleExports } from "./performance/no-unused-module-exports.js";
 import { noUnusedProviders } from "./performance/no-unused-providers.js";
+import { requireCascadeRule } from "./schema/require-cascade-rule.js";
+import { requirePrimaryKey } from "./schema/require-primary-key.js";
+import { requireTimestamps } from "./schema/require-timestamps.js";
 import { noCsrfDisabled } from "./security/no-csrf-disabled.js";
 import { noDangerousRedirects } from "./security/no-dangerous-redirects.js";
 import { noEval } from "./security/no-eval.js";
@@ -94,6 +97,11 @@ export const allRules: AnyRule[] = [
 	noUnusedProviders,
 	noUnusedModuleExports,
 	noOrphanModules,
+
+	// Schema
+	requirePrimaryKey,
+	requireTimestamps,
+	requireCascadeRule,
 ];
 
 export function getRules(): AnyRule[] {

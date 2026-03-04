@@ -1,14 +1,22 @@
 import type { Project } from "ts-morph";
 import type {
 	AnyRule,
+	CodeRuleContext,
 	ProjectRule,
 	ProjectRuleContext,
 	Rule,
-	RuleContext,
+	SchemaRule,
+	SchemaRuleContext,
 } from "../rules/types.js";
-import { isProjectRule } from "../rules/types.js";
+import { isProjectRule, isSchemaRule } from "../rules/types.js";
 import type { NestjsDoctorConfig } from "../types/config.js";
-import type { Diagnostic, SourceLine } from "../types/diagnostic.js";
+import type {
+	CodeDiagnostic,
+	Diagnostic,
+	SchemaDiagnostic,
+	SourceLine,
+} from "../types/diagnostic.js";
+import type { SchemaGraph } from "../types/schema.js";
 import type { ModuleGraph } from "./module-graph.js";
 import type { ProviderInfo } from "./type-resolver.js";
 
@@ -31,19 +39,23 @@ export interface RunRulesOptions {
 export function separateRules(rules: AnyRule[]): {
 	fileRules: Rule[];
 	projectRules: ProjectRule[];
+	schemaRules: SchemaRule[];
 } {
 	const fileRules: Rule[] = [];
 	const projectRules: ProjectRule[] = [];
+	const schemaRules: SchemaRule[] = [];
 
 	for (const rule of rules) {
-		if (isProjectRule(rule)) {
+		if (isSchemaRule(rule)) {
+			schemaRules.push(rule);
+		} else if (isProjectRule(rule)) {
 			projectRules.push(rule);
 		} else {
 			fileRules.push(rule);
 		}
 	}
 
-	return { fileRules, projectRules };
+	return { fileRules, projectRules, schemaRules };
 }
 
 export function runFileRulesOnFile(
@@ -51,7 +63,7 @@ export function runFileRulesOnFile(
 	filePath: string,
 	rules: Rule[]
 ): RunRulesResult {
-	const diagnostics: Diagnostic[] = [];
+	const diagnostics: CodeDiagnostic[] = [];
 	const errors: RuleError[] = [];
 
 	const sourceFile = project.getSourceFile(filePath);
@@ -63,7 +75,7 @@ export function runFileRulesOnFile(
 	const allLines = fullText.split("\n");
 
 	for (const rule of rules) {
-		const context: RuleContext = {
+		const context: CodeRuleContext = {
 			sourceFile,
 			filePath,
 			report(partial) {
@@ -117,7 +129,7 @@ export function runProjectRules(
 	rules: ProjectRule[],
 	options: RunRulesOptions
 ): RunRulesResult {
-	const diagnostics: Diagnostic[] = [];
+	const diagnostics: CodeDiagnostic[] = [];
 	const errors: RuleError[] = [];
 
 	for (const rule of rules) {
@@ -133,6 +145,38 @@ export function runProjectRules(
 					rule: rule.meta.id,
 					category: rule.meta.category,
 					scope: "project",
+					severity: rule.meta.severity,
+				});
+			},
+		};
+
+		try {
+			rule.check(context);
+		} catch (error) {
+			errors.push({ ruleId: rule.meta.id, error });
+		}
+	}
+
+	return { diagnostics, errors };
+}
+
+export function runSchemaRules(
+	schemaGraph: SchemaGraph,
+	rules: SchemaRule[]
+): RunRulesResult {
+	const diagnostics: SchemaDiagnostic[] = [];
+	const errors: RuleError[] = [];
+
+	for (const rule of rules) {
+		const context: SchemaRuleContext = {
+			schemaGraph,
+			orm: schemaGraph.orm,
+			report(partial) {
+				diagnostics.push({
+					...partial,
+					rule: rule.meta.id,
+					category: rule.meta.category,
+					scope: "schema",
 					severity: rule.meta.severity,
 				});
 			},

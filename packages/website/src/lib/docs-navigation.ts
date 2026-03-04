@@ -52,6 +52,7 @@ export const DOCS_NAV: NavSection[] = [
 			{ title: "Correctness", href: "/docs/rules/correctness" },
 			{ title: "Architecture", href: "/docs/rules/architecture" },
 			{ title: "Performance", href: "/docs/rules/performance" },
+			{ title: "Schema", href: "/docs/rules/schema" },
 		],
 	},
 ];
