@@ -1,6 +1,6 @@
 # Rules Overview
 
-nestjs-doctor ships with 40 built-in rules across four categories.
+nestjs-doctor ships with 43 built-in rules across five categories.
 
 ## Categories
 
@@ -10,13 +10,15 @@ nestjs-doctor ships with 40 built-in rules across four categories.
 | [Correctness](/docs/rules/correctness) | 14 | Missing decorators, duplicate routes, async issues |
 | [Architecture](/docs/rules/architecture) | 10 | Layer violations, circular deps, DI patterns |
 | [Performance](/docs/rules/performance) | 7 | Sync I/O, blocking constructors, dead code |
+| [Schema](/docs/rules/schema) | 3 | Primary keys, timestamps, cascade rules |
 
 ## Rule Scopes
 
-Rules have one of two scopes:
+Rules have one of three scopes:
 
 - **File-scoped** (default) — runs once per source file. Gets a `RuleContext` with the file's AST.
 - **Project-scoped** (`scope: "project"`) — runs once for the entire project. Gets a `ProjectRuleContext` with the full module graph and provider map.
+- **Schema-scoped** (`scope: "schema"`) — runs once per schema graph. Gets a `SchemaRuleContext` with the extracted entity-relation data from Prisma or TypeORM.
 
 ## Rule Structure
 
@@ -28,7 +30,7 @@ import type { Rule } from "../types.js";
 export const myRule: Rule = {
   meta: {
     id: "category/my-rule",          // unique ID
-    category: "correctness",         // security | correctness | architecture | performance
+    category: "correctness",         // security | correctness | architecture | performance | schema
     severity: "warning",             // error | warning | info
     description: "What this rule detects",
     help: "How to fix it",

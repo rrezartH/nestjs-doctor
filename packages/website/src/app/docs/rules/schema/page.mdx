@@ -1,0 +1,88 @@
+import { CodeGroup } from "@/components/docs/code-group";
+
+# Schema Rules
+
+3 rules that validate your database schema design — primary keys, timestamps, and relation configuration. These rules run against entity-relation data extracted from Prisma schema files or TypeORM entity decorators.
+
+| Rule | Severity | What it catches |
+|------|----------|-----------------|
+| `require-primary-key` | error | Entity without a primary key column |
+| `require-timestamps` | warning | Entity missing createdAt/updatedAt columns |
+| `require-cascade-rule` | info | Relation missing explicit onDelete behavior |
+
+---
+
+## require-primary-key
+
+Detects entities that have no primary key column.
+
+**Why:** Entities without primary keys cannot be uniquely identified, breaking lookups, joins, and ORM operations. Every table should have an explicit primary key.
+
+<CodeGroup labels={["Bad", "Good"]}>
+```prisma
+model Product {
+  name  String
+  price Float
+}
+```
+```prisma
+model Product {
+  id    Int    @id @default(autoincrement())
+  name  String
+  price Float
+}
+```
+</CodeGroup>
+
+---
+
+## require-timestamps
+
+Detects entities missing `createdAt`/`updatedAt` timestamp columns.
+
+**Why:** Timestamp columns are essential for auditing, debugging, and data integrity. Without them, there is no way to know when a record was created or last modified.
+
+<CodeGroup labels={["Bad", "Good"]}>
+```prisma
+model Post {
+  id    Int    @id @default(autoincrement())
+  title String
+  body  String
+}
+```
+```prisma
+model Post {
+  id        Int      @id @default(autoincrement())
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+</CodeGroup>
+
+---
+
+## require-cascade-rule
+
+Detects owning-side relations (ManyToOne/OneToOne) without an explicit `onDelete` behavior.
+
+**Why:** Without explicit onDelete behavior, the database default (usually RESTRICT or NO ACTION) may cause unexpected constraint errors when deleting parent records. Being explicit about cascade behavior makes the data model self-documenting.
+
+<CodeGroup labels={["Bad", "Good"]}>
+```prisma
+model Comment {
+  id     Int  @id @default(autoincrement())
+  post   Post @relation(fields: [postId], references: [id])
+  postId Int
+}
+```
+```prisma
+model Comment {
+  id     Int  @id @default(autoincrement())
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId Int
+}
+```
+</CodeGroup>
+
