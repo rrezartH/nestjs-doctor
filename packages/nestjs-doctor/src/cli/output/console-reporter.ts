@@ -175,7 +175,7 @@ const buildFileLineMap = (diagnostics: Diagnostic[]): Map<string, number[]> => {
 	const fileLines = new Map<string, number[]>();
 	for (const d of diagnostics) {
 		const lines = fileLines.get(d.filePath) ?? [];
-		if (d.line > 0) {
+		if ("line" in d && d.line > 0) {
 			lines.push(d.line);
 		}
 		fileLines.set(d.filePath, lines);

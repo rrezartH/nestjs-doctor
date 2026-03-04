@@ -6,6 +6,7 @@ export interface ReportScriptData {
 	graphJson: string;
 	projectJson: string;
 	providersJson: string;
+	schemaJson: string;
 	sourceLinesJson: string;
 	summaryJson: string;
 }
@@ -21,6 +22,7 @@ const elapsedMs = ${data.elapsedMsJson};
 const ruleExamples = ${data.examplesJson};
 const fileSources = ${data.fileSourcesJson};
 const providers = ${data.providersJson};
+const schema = ${data.schemaJson};
 const isMonorepo = Object.keys(fileSources).length === 0;
 
 // ── Score helpers ──
@@ -70,6 +72,7 @@ let activeTab = "summary";
 let diagnosisRendered = false;
 let summaryRendered = false;
 let labRendered = false;
+let schemaRendered = false;
 
 const tabBtns = document.querySelectorAll(".tab-btn");
 const tabContents = {
@@ -77,6 +80,7 @@ const tabContents = {
   diagnosis: document.getElementById("tab-diagnosis"),
   summary: document.getElementById("tab-summary"),
   lab: document.getElementById("tab-lab"),
+  schema: document.getElementById("tab-schema"),
 };
 const graphControls = document.getElementById("graph-controls");
 const sidebar = document.getElementById("sidebar");
@@ -101,6 +105,7 @@ function switchTab(name) {
   if (name === "diagnosis" && !diagnosisRendered) { renderDiagnosis(); diagnosisRendered = true; }
   if (name === "summary" && !summaryRendered) { renderSummary(); summaryRendered = true; }
   if (name === "lab" && !labRendered) { renderLab(); labRendered = true; }
+  if (name === "schema" && !schemaRendered) { renderSchema(); schemaRendered = true; }
   if (name === "modules") resize();
 }
 
@@ -588,10 +593,11 @@ const SEV_ORDER = { error: 0, warning: 1, info: 2 };
 const CAT_META = {
   security:     { label: "Security",     color: "var(--cat-security)" },
   correctness:  { label: "Correctness",  color: "var(--cat-correctness)" },
+  schema:       { label: "Schema",       color: "var(--cat-schema)" },
   architecture: { label: "Architecture", color: "var(--cat-architecture)" },
   performance:  { label: "Performance",  color: "var(--cat-performance)" },
 };
-const CAT_ORDER = ["security", "correctness", "architecture", "performance"];
+const CAT_ORDER = ["security", "correctness", "schema", "architecture", "performance"];
 
 function renderDiagnosis() {
   const sidebarEl = document.getElementById("diagnosis-sidebar");
@@ -618,7 +624,7 @@ function renderDiagnosis() {
     fileMap[fp].push({ d: d, origIdx: i });
   }
   for (const fp in fileMap) {
-    fileMap[fp].sort(function(a, b) { return a.d.line - b.d.line; });
+    fileMap[fp].sort(function(a, b) { return (a.d.line || 0) - (b.d.line || 0); });
   }
 
   // Build tree from file paths
@@ -681,7 +687,7 @@ function renderDiagnosis() {
     const fullSource = fileSources[filePath];
 
     // Sort filtered diagnostics by line number
-    const sorted = filtered.slice().sort(function(a, b) { return a.d.line - b.d.line; });
+    const sorted = filtered.slice().sort(function(a, b) { return (a.d.line || 0) - (b.d.line || 0); });
 
     // Check if any diagnostic has source lines
     let hasAnySource = false;
@@ -702,6 +708,8 @@ function renderDiagnosis() {
       const segments = [];
       for (let si = 0; si < sorted.length; si++) {
         const entry = sorted[si];
+        // Schema diagnostics have no line — skip code segment
+        if (!("line" in entry.d)) continue;
         const sl = sourceLinesData[entry.origIdx];
         let segStart, segEnd;
         if (sl && sl.length > 0) {
@@ -824,6 +832,7 @@ function renderDiagnosis() {
         const lineMetadata = {};
         for (let hi = 0; hi < sorted.length; hi++) {
           const de = sorted[hi].d;
+          if (!("line" in de)) continue;
           const relLine = de.line - firstLineNum + 1;
           if (relLine >= 1) {
             hlLines.push(relLine);
@@ -872,12 +881,15 @@ function renderDiagnosis() {
         const d = group.entries[k].d;
         const sevColor = d.severity === "error" ? "var(--sev-error)"
           : d.severity === "warning" ? "var(--sev-warning)" : "var(--sev-info)";
+        var locationLabel = ("line" in d)
+          ? '<span class="diag-linecol">Ln ' + d.line + ', Col ' + d.column + '</span>'
+          : (d.entity ? '<span class="diag-linecol">' + escHtml(d.entity) + (d.schemaColumn ? '.' + escHtml(d.schemaColumn) : '') + '</span>' : '');
         innerHtml +=
           '<div class="diag-info-header">' +
             '<div class="sev-dot" style="background:' + sevColor + '"></div>' +
             '<span class="code-sev-badge ' + d.severity + '">' + d.severity + '</span>' +
             '<span class="code-rule-badge">' + escHtml(d.rule) + '</span>' +
-            '<span class="diag-linecol">Ln ' + d.line + ', Col ' + d.column + '</span>' +
+            locationLabel +
           '</div>' +
           '<div class="diag-info-msg">' + escHtml(d.message) + '</div>';
         if (!helpText && d.help) helpText = d.help;
@@ -1714,6 +1726,1386 @@ function renderLab() {
       }
     }
   });
+}
+
+// ── Schema tab visibility ──
+if (schema.entities.length > 0) {
+  document.getElementById("tab-btn-schema").style.display = "";
+}
+
+// ── Schema: Canvas-based interactive ER diagram ──
+
+// Row size estimation
+var TYPE_BYTES = {
+  "integer": 4, "int": 4, "int4": 4, "Int": 4, "serial": 4,
+  "bigint": 8, "BigInt": 8, "int8": 8, "bigserial": 8,
+  "smallint": 2, "int2": 2, "tinyint": 1,
+  "float": 8, "double": 8, "Float": 8, "Decimal": 8, "decimal": 8,
+  "real": 4, "float4": 4, "float8": 8, "numeric": 8,
+  "boolean": 1, "Boolean": 1, "bool": 1,
+  "varchar": 256, "String": 256, "text": 256, "char": 64, "character varying": 256,
+  "uuid": 16, "UUID": 16,
+  "timestamp": 8, "DateTime": 8, "Date": 8, "date": 4, "time": 8,
+  "timestamptz": 8, "timestamp without time zone": 8, "timestamp with time zone": 8,
+  "json": 512, "Json": 512, "jsonb": 512,
+  "enum": 4, "Enum": 4,
+  "bytea": 256, "Bytes": 256,
+};
+
+function estimateRowSize(entity) {
+  var total = 0;
+  for (var i = 0; i < entity.columns.length; i++) {
+    var t = entity.columns[i].type;
+    var base = t.replace(/\\(.*\\)/, "").replace(/\\[.*\\]/, "").trim();
+    total += TYPE_BYTES[base] || 64;
+  }
+  return total;
+}
+
+function formatBytes(b) {
+  if (b >= 1024) return "~" + (b / 1024).toFixed(1) + " KB";
+  return "~" + b + " B";
+}
+
+// Canvas state
+var sCanvas, sCtx, sDpr, sW, sH;
+var sCamX = 0, sCamY = 0, sZoom = 1;
+var sDragging = null, sPanning = false, sPanStart = {x: 0, y: 0};
+var sDragMoved = false;
+var sHoveredEntity = null, sHoveredRelation = null;
+var sSelectedEntity = null;
+var sNodes = [];
+var sNodeMap = {};
+var sEdgeRoutes = {};
+var sEdgeKeys = [];
+var sAllNodes = [];
+var sAllNodeMap = {};
+var sFocusedMode = false;
+var sShowCols = null;
+
+// Schema tooltip element
+var sTooltipEl = null;
+var sRelBadgeEl = null;
+
+// Dirty-flag redraw (zero CPU at idle)
+var sSchemaDirty = false;
+function sScheduleRedraw() {
+  if (!sSchemaDirty) {
+    sSchemaDirty = true;
+    requestAnimationFrame(function() { sSchemaDirty = false; schemaDraw(); });
+  }
+}
+
+function sScreenToWorld(sx, sy) {
+  return {
+    x: (sx - sW / 2) / sZoom + sW / 2 - sCamX,
+    y: (sy - sH / 2) / sZoom + sH / 2 - sCamY
+  };
+}
+
+function sHitTestEntity(wx, wy) {
+  for (var i = sNodes.length - 1; i >= 0; i--) {
+    var n = sNodes[i];
+    if (wx >= n.x - n.w / 2 && wx <= n.x + n.w / 2 &&
+        wy >= n.y - n.h / 2 && wy <= n.y + n.h / 2) {
+      return n;
+    }
+  }
+  return null;
+}
+
+function sGetRelatedEntities(entityName) {
+  var related = new Set();
+  related.add(entityName);
+  for (var i = 0; i < schema.relations.length; i++) {
+    var rel = schema.relations[i];
+    if (rel.fromEntity === entityName) related.add(rel.toEntity);
+    if (rel.toEntity === entityName) related.add(rel.fromEntity);
+  }
+  return related;
+}
+
+// Point-to-segment distance for polyline hit-testing
+function sPointToSegmentDist(px, py, ax, ay, bx, by) {
+  var dx = bx - ax, dy = by - ay;
+  var lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+  var t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  var projX = ax + t * dx;
+  var projY = ay + t * dy;
+  return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+}
+
+function sHitTestRelation(wx, wy) {
+  var threshold = 8 / sZoom;
+  for (var k = 0; k < sEdgeKeys.length; k++) {
+    var key = sEdgeKeys[k];
+    var points = sEdgeRoutes[key];
+    if (!points || points.length < 2) continue;
+    for (var p = 0; p < points.length - 1; p++) {
+      var d = sPointToSegmentDist(wx, wy, points[p].x, points[p].y, points[p + 1].x, points[p + 1].y);
+      if (d < threshold) {
+        var parts = key.split("|");
+        for (var r = 0; r < schema.relations.length; r++) {
+          var rel = schema.relations[r];
+          if (rel.fromEntity === parts[0] && rel.toEntity === parts[1]) return rel;
+          if (rel.fromEntity === parts[1] && rel.toEntity === parts[0]) return rel;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function sRelLabel(type) {
+  if (type === "one-to-one") return "1:1";
+  if (type === "one-to-many") return "1:N";
+  if (type === "many-to-one") return "N:1";
+  return "N:M";
+}
+
+// Manhattan edge routing
+var S_EDGE_MARGIN = 14;
+
+function sEdgeKey(fromName, toName) {
+  return fromName < toName ? fromName + "|" + toName : toName + "|" + fromName;
+}
+
+function sSegmentHitsBox(ax, ay, bx, by, box, margin) {
+  var left = box.x - box.w / 2 - margin;
+  var right = box.x + box.w / 2 + margin;
+  var top = box.y - box.h / 2 - margin;
+  var bottom = box.y + box.h / 2 + margin;
+
+  // Horizontal segment
+  if (Math.abs(ay - by) < 1) {
+    if (ay < top || ay > bottom) return false;
+    var minX = Math.min(ax, bx);
+    var maxX = Math.max(ax, bx);
+    return maxX > left && minX < right;
+  }
+  // Vertical segment
+  if (Math.abs(ax - bx) < 1) {
+    if (ax < left || ax > right) return false;
+    var minY = Math.min(ay, by);
+    var maxY = Math.max(ay, by);
+    return maxY > top && minY < bottom;
+  }
+  return false;
+}
+
+function sSegmentHitsAnyBox(ax, ay, bx, by, excludeA, excludeB) {
+  for (var i = 0; i < sNodes.length; i++) {
+    var n = sNodes[i];
+    if (n.name === excludeA || n.name === excludeB) continue;
+    if (sSegmentHitsBox(ax, ay, bx, by, n, S_EDGE_MARGIN)) return true;
+  }
+  return false;
+}
+
+function sComputePort(from, to) {
+  var dx = to.x - from.x;
+  var dy = to.y - from.y;
+  var px, py, dir;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    if (dx >= 0) { px = from.x + from.w / 2; py = from.y; dir = "right"; }
+    else { px = from.x - from.w / 2; py = from.y; dir = "left"; }
+  } else {
+    if (dy >= 0) { px = from.x; py = from.y + from.h / 2; dir = "down"; }
+    else { px = from.x; py = from.y - from.h / 2; dir = "up"; }
+  }
+  return { x: px, y: py, dir: dir };
+}
+
+function sStepOut(port) {
+  if (port.dir === "right") return { x: port.x + S_EDGE_MARGIN, y: port.y };
+  if (port.dir === "left") return { x: port.x - S_EDGE_MARGIN, y: port.y };
+  if (port.dir === "down") return { x: port.x, y: port.y + S_EDGE_MARGIN };
+  return { x: port.x, y: port.y - S_EDGE_MARGIN };
+}
+
+function sRouteManhattan(fromNode, toNode) {
+  var portA = sComputePort(fromNode, toNode);
+  var portB = sComputePort(toNode, fromNode);
+  var stepA = sStepOut(portA);
+  var stepB = sStepOut(portB);
+
+  var fromName = fromNode.name;
+  var toName = toNode.name;
+
+  // Try L-shape: H then V
+  var midX1 = stepB.x, midY1 = stepA.y;
+  if (!sSegmentHitsAnyBox(stepA.x, stepA.y, midX1, midY1, fromName, toName) &&
+      !sSegmentHitsAnyBox(midX1, midY1, stepB.x, stepB.y, fromName, toName)) {
+    return sSimplifyPath([portA, stepA, {x: midX1, y: midY1}, stepB, portB]);
+  }
+
+  // Try L-shape: V then H
+  var midX2 = stepA.x, midY2 = stepB.y;
+  if (!sSegmentHitsAnyBox(stepA.x, stepA.y, midX2, midY2, fromName, toName) &&
+      !sSegmentHitsAnyBox(midX2, midY2, stepB.x, stepB.y, fromName, toName)) {
+    return sSimplifyPath([portA, stepA, {x: midX2, y: midY2}, stepB, portB]);
+  }
+
+  // U-shaped detour: find best detour direction
+  var bestPath = null;
+  var bestLen = Infinity;
+  var offsets = [
+    { dx: 0, dy: -80 },
+    { dx: 0, dy: 80 },
+    { dx: -80, dy: 0 },
+    { dx: 80, dy: 0 }
+  ];
+  for (var o = 0; o < offsets.length; o++) {
+    var midAx = stepA.x + offsets[o].dx;
+    var midAy = stepA.y + offsets[o].dy;
+    var midBx = stepB.x + offsets[o].dx;
+    var midBy = stepB.y + offsets[o].dy;
+    var path = [portA, stepA, {x: midAx, y: midAy}, {x: midBx, y: midBy}, stepB, portB];
+    var blocked = false;
+    for (var s = 0; s < path.length - 1; s++) {
+      if (sSegmentHitsAnyBox(path[s].x, path[s].y, path[s + 1].x, path[s + 1].y, fromName, toName)) {
+        blocked = true;
+        break;
+      }
+    }
+    if (!blocked) {
+      var len = 0;
+      for (var s = 0; s < path.length - 1; s++) {
+        len += Math.abs(path[s + 1].x - path[s].x) + Math.abs(path[s + 1].y - path[s].y);
+      }
+      if (len < bestLen) { bestLen = len; bestPath = path; }
+    }
+  }
+
+  if (bestPath) return sSimplifyPath(bestPath);
+
+  // Fallback: direct L-shape (no obstacle avoidance)
+  return sSimplifyPath([portA, stepA, {x: stepB.x, y: stepA.y}, stepB, portB]);
+}
+
+function sSimplifyPath(points) {
+  if (points.length <= 2) return points;
+  var result = [points[0]];
+  for (var i = 1; i < points.length - 1; i++) {
+    var prev = result[result.length - 1];
+    var next = points[i + 1];
+    var curr = points[i];
+    // Skip collinear points
+    var sameX = Math.abs(prev.x - curr.x) < 1 && Math.abs(curr.x - next.x) < 1;
+    var sameY = Math.abs(prev.y - curr.y) < 1 && Math.abs(curr.y - next.y) < 1;
+    if (!sameX && !sameY) result.push(curr);
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
+function sRouteAllEdges() {
+  sEdgeRoutes = {};
+  sEdgeKeys = [];
+  var seen = {};
+  for (var i = 0; i < schema.relations.length; i++) {
+    var rel = schema.relations[i];
+    if (rel.fromEntity === rel.toEntity) continue;
+    var a = sNodeMap[rel.fromEntity];
+    var b = sNodeMap[rel.toEntity];
+    if (!a || !b) continue;
+    if (sFocusedMode && sSelectedEntity &&
+        rel.fromEntity !== sSelectedEntity && rel.toEntity !== sSelectedEntity) continue;
+    var key = sEdgeKey(rel.fromEntity, rel.toEntity);
+    if (seen[key]) continue;
+    seen[key] = true;
+    sEdgeRoutes[key] = sRouteManhattan(a, b);
+    sEdgeKeys.push(key);
+  }
+}
+
+function sRerouteEdgesForNode(name) {
+  for (var k = 0; k < sEdgeKeys.length; k++) {
+    var key = sEdgeKeys[k];
+    var parts = key.split("|");
+    if (parts[0] === name || parts[1] === name) {
+      var a = sNodeMap[parts[0]];
+      var b = sNodeMap[parts[1]];
+      if (a && b) sEdgeRoutes[key] = sRouteManhattan(a, b);
+    }
+  }
+}
+
+// Polyline midpoint for label placement
+function sPolylineMidpoint(points) {
+  if (!points || points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return { x: points[0].x, y: points[0].y };
+  var totalLen = 0;
+  for (var i = 0; i < points.length - 1; i++) {
+    totalLen += Math.sqrt(
+      (points[i + 1].x - points[i].x) * (points[i + 1].x - points[i].x) +
+      (points[i + 1].y - points[i].y) * (points[i + 1].y - points[i].y)
+    );
+  }
+  var half = totalLen / 2;
+  var walked = 0;
+  for (var i = 0; i < points.length - 1; i++) {
+    var segLen = Math.sqrt(
+      (points[i + 1].x - points[i].x) * (points[i + 1].x - points[i].x) +
+      (points[i + 1].y - points[i].y) * (points[i + 1].y - points[i].y)
+    );
+    if (walked + segLen >= half) {
+      var t = segLen > 0 ? (half - walked) / segLen : 0;
+      return {
+        x: points[i].x + t * (points[i + 1].x - points[i].x),
+        y: points[i].y + t * (points[i + 1].y - points[i].y)
+      };
+    }
+    walked += segLen;
+  }
+  return { x: points[points.length - 1].x, y: points[points.length - 1].y };
+}
+
+// dagre layout computation
+function sComputeDagreLayout() {
+  if (typeof dagre === "undefined") {
+    // Fallback: simple grid layout
+    var cols = Math.max(1, Math.ceil(Math.sqrt(sNodes.length)));
+    for (var i = 0; i < sNodes.length; i++) {
+      sNodes[i].x = 300 + (i % cols) * 250;
+      sNodes[i].y = 200 + Math.floor(i / cols) * 120;
+    }
+    sRouteAllEdges();
+    return;
+  }
+
+  var g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 120, marginx: 40, marginy: 40 });
+  g.setDefaultEdgeLabel(function() { return {}; });
+
+  for (var i = 0; i < sNodes.length; i++) {
+    g.setNode(sNodes[i].name, { width: sNodes[i].w, height: sNodes[i].h });
+  }
+
+  var seenEdge = {};
+  for (var i = 0; i < schema.relations.length; i++) {
+    var rel = schema.relations[i];
+    if (rel.fromEntity === rel.toEntity) continue;
+    if (!sNodeMap[rel.fromEntity] || !sNodeMap[rel.toEntity]) continue;
+    var ek = sEdgeKey(rel.fromEntity, rel.toEntity);
+    if (seenEdge[ek]) continue;
+    seenEdge[ek] = true;
+    g.setEdge(rel.fromEntity, rel.toEntity);
+  }
+
+  dagre.layout(g);
+
+  for (var i = 0; i < sNodes.length; i++) {
+    var laid = g.node(sNodes[i].name);
+    if (laid) {
+      sNodes[i].x = laid.x;
+      sNodes[i].y = laid.y;
+    }
+  }
+
+  sRouteAllEdges();
+}
+
+function sComputeStarLayout(centerName) {
+  var center = sNodeMap[centerName];
+  if (!center) return;
+  var cx = sW / 2;
+  var cy = sH / 2;
+  center.x = cx;
+  center.y = cy;
+
+  var neighbors = [];
+  for (var i = 0; i < sNodes.length; i++) {
+    if (sNodes[i].name !== centerName) neighbors.push(sNodes[i]);
+  }
+  if (neighbors.length === 0) return;
+
+  var maxW = 180;
+  var maxH = 52;
+  for (var i = 0; i < sNodes.length; i++) {
+    if (sNodes[i].w > maxW) maxW = sNodes[i].w;
+    if (sNodes[i].h > maxH) maxH = sNodes[i].h;
+  }
+
+  var isLandscape = sW >= sH;
+
+  if (neighbors.length === 1) {
+    if (isLandscape) {
+      neighbors[0].x = cx + maxW + 100;
+      neighbors[0].y = cy;
+    } else {
+      neighbors[0].x = cx;
+      neighbors[0].y = cy + maxH + 80;
+    }
+    return;
+  }
+
+  if (neighbors.length === 2) {
+    if (isLandscape) {
+      var hGap = maxW + 100;
+      neighbors[0].x = cx - hGap;
+      neighbors[0].y = cy;
+      neighbors[1].x = cx + hGap;
+      neighbors[1].y = cy;
+    } else {
+      var vGap = maxH + 80;
+      neighbors[0].x = cx;
+      neighbors[0].y = cy - vGap;
+      neighbors[1].x = cx;
+      neighbors[1].y = cy + vGap;
+    }
+    return;
+  }
+
+  var rx = sW * 0.4 - maxW / 2;
+  var ry = sH * 0.4 - maxH / 2;
+  var minR = maxW / 2 + maxH / 2 + 40;
+  if (rx < minR) rx = minR;
+  if (ry < minR) ry = minR;
+
+  var startAngle = isLandscape ? 0 : -Math.PI / 2;
+
+  for (var i = 0; i < neighbors.length; i++) {
+    var angle = startAngle + (2 * Math.PI * i) / neighbors.length;
+    neighbors[i].x = cx + rx * Math.cos(angle);
+    neighbors[i].y = cy + ry * Math.sin(angle);
+  }
+}
+
+function sSetVisibleSubset(entityName) {
+  if (!sFocusedMode) return;
+
+  var emptyState = document.getElementById("schema-empty-state");
+
+  if (!entityName) {
+    sNodes = [];
+    sNodeMap = {};
+    sEdgeRoutes = {};
+    sEdgeKeys = [];
+    if (emptyState) emptyState.style.display = "flex";
+    sCanvas.style.display = "none";
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = "none";
+  sCanvas.style.display = "block";
+
+  var related = sGetRelatedEntities(entityName);
+  sNodes = [];
+  sNodeMap = {};
+  for (var i = 0; i < sAllNodes.length; i++) {
+    if (related.has(sAllNodes[i].name)) {
+      sNodes.push(sAllNodes[i]);
+      sNodeMap[sAllNodes[i].name] = sAllNodes[i];
+    }
+  }
+
+  var showCols = sShowCols !== null ? sShowCols : sNodes.length <= 5;
+  for (var i = 0; i < sNodes.length; i++) {
+    var cols = sNodes[i].entity.columns;
+    var visCount = showCols ? Math.min(cols.length, 7) : 0;
+    var hasMore = showCols && cols.length > 7;
+    sNodes[i].h = showCols ? 24 + visCount * 16 + (hasMore ? 16 : 0) + 8 : 52;
+    sNodes[i].w = 180;
+  }
+
+  sComputeStarLayout(entityName);
+  sRouteAllEdges();
+  sCenterCamera();
+  sScheduleRedraw();
+}
+
+function sCenterCamera() {
+  if (sNodes.length === 0) return;
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (var i = 0; i < sNodes.length; i++) {
+    var n = sNodes[i];
+    minX = Math.min(minX, n.x - n.w / 2);
+    maxX = Math.max(maxX, n.x + n.w / 2);
+    minY = Math.min(minY, n.y - n.h / 2);
+    maxY = Math.max(maxY, n.y + n.h / 2);
+  }
+  var graphW = maxX - minX;
+  var graphH = maxY - minY;
+  var cx = (minX + maxX) / 2;
+  var cy = (minY + maxY) / 2;
+
+  var padW = sW * 0.85;
+  var padH = sH * 0.85;
+  sZoom = Math.min(1.5, Math.min(padW / (graphW || 1), padH / (graphH || 1)));
+  sZoom = Math.max(0.2, sZoom);
+  sCamX = sW / 2 - cx;
+  sCamY = sH / 2 - cy;
+}
+
+// Round rect helper
+function sRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Drawing
+function schemaDraw() {
+  if (sNodes.length === 0) return;
+  sCtx.save();
+  sCtx.clearRect(0, 0, sW, sH);
+  sCtx.translate(sW / 2, sH / 2);
+  sCtx.scale(sZoom, sZoom);
+  sCtx.translate(-sW / 2 + sCamX, -sH / 2 + sCamY);
+
+  var selectedRelated = sSelectedEntity ? sGetRelatedEntities(sSelectedEntity) : null;
+  var hovRelFrom = sHoveredRelation ? sHoveredRelation.fromEntity : null;
+  var hovRelTo = sHoveredRelation ? sHoveredRelation.toEntity : null;
+
+  // Draw relation lines as solid polylines
+  var drawnEdges = {};
+  for (var i = 0; i < schema.relations.length; i++) {
+    var rel = schema.relations[i];
+    if (rel.fromEntity === rel.toEntity) continue;
+    var a = sNodeMap[rel.fromEntity];
+    var b = sNodeMap[rel.toEntity];
+    if (!a || !b) continue;
+    if (sFocusedMode && sSelectedEntity &&
+        rel.fromEntity !== sSelectedEntity && rel.toEntity !== sSelectedEntity) continue;
+
+    var key = sEdgeKey(rel.fromEntity, rel.toEntity);
+    if (drawnEdges[key]) continue;
+    drawnEdges[key] = true;
+
+    var points = sEdgeRoutes[key];
+    if (!points || points.length < 2) continue;
+
+    var isHovered = (sHoveredRelation && sEdgeKey(sHoveredRelation.fromEntity, sHoveredRelation.toEntity) === key);
+    var dimmed = selectedRelated && !(selectedRelated.has(rel.fromEntity) && selectedRelated.has(rel.toEntity));
+
+    sCtx.globalAlpha = dimmed ? 0.12 : 1;
+
+    // Draw polyline with rounded corners
+    sCtx.beginPath();
+    sCtx.moveTo(points[0].x, points[0].y);
+    var cornerR = 3 / sZoom;
+    for (var p = 1; p < points.length - 1; p++) {
+      sCtx.arcTo(points[p].x, points[p].y, points[p + 1].x, points[p + 1].y, cornerR);
+    }
+    sCtx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+
+    if (isHovered) {
+      sCtx.save();
+      sCtx.shadowColor = "#ffffff";
+      sCtx.shadowBlur = 8;
+      sCtx.strokeStyle = "#ffffff";
+      sCtx.lineWidth = 2.5 / sZoom;
+      sCtx.stroke();
+      sCtx.restore();
+    } else {
+      sCtx.strokeStyle = "#555";
+      sCtx.lineWidth = 1.5 / sZoom;
+      sCtx.stroke();
+    }
+
+    // Cardinality label at polyline midpoint
+    var mid = sPolylineMidpoint(points);
+    var labelStr = sRelLabel(rel.type);
+    sCtx.font = (10 / sZoom) + "px monospace";
+    sCtx.textAlign = "center";
+    sCtx.textBaseline = "bottom";
+    sCtx.fillStyle = isHovered ? "#ffffff" : "#666";
+    sCtx.fillText(labelStr, mid.x, mid.y - 4 / sZoom);
+  }
+  sCtx.globalAlpha = 1;
+
+  // Draw entity boxes
+  var BOX_W = 180;
+  var R = 6;
+  var HDR_H = 24;
+  var COL_ROW_H = 16;
+  var MAX_VISIBLE_COLS = 7;
+  var showCols = sShowCols !== null ? sShowCols : sNodes.length <= 5;
+
+  for (var i = 0; i < sNodes.length; i++) {
+    var n = sNodes[i];
+    var cols = n.entity.columns;
+    var visibleColCount = showCols ? Math.min(cols.length, MAX_VISIBLE_COLS) : 0;
+    var hasMore = showCols && cols.length > MAX_VISIBLE_COLS;
+    var BOX_H = showCols
+      ? HDR_H + visibleColCount * COL_ROW_H + (hasMore ? COL_ROW_H : 0) + 8
+      : 52;
+    n.w = BOX_W;
+    n.h = BOX_H;
+
+    var x = n.x - BOX_W / 2;
+    var y = n.y - BOX_H / 2;
+    var isSelected = (sSelectedEntity === n.name);
+    var isHovered = (sHoveredEntity && sHoveredEntity.name === n.name);
+    var isHoverConnected = (hovRelFrom === n.name || hovRelTo === n.name);
+    var dimmed = selectedRelated && !selectedRelated.has(n.name);
+
+    sCtx.globalAlpha = dimmed ? 0.15 : 1;
+
+    // Shadow for selected
+    if (isSelected) {
+      sCtx.save();
+      sCtx.shadowColor = "rgba(234,40,69,0.4)";
+      sCtx.shadowBlur = 12;
+    }
+
+    // Body background (full box)
+    sRoundRect(sCtx, x, y, BOX_W, BOX_H, R);
+    sCtx.fillStyle = "#151515";
+    sCtx.fill();
+
+    // Border
+    sCtx.strokeStyle = isSelected ? "#ea2845" : (isHoverConnected || isHovered) ? "#ffffff" : "rgba(255,255,255,0.06)";
+    sCtx.lineWidth = (isSelected || isHoverConnected || isHovered) ? 2 : 1;
+    sCtx.stroke();
+
+    if (isSelected) sCtx.restore();
+
+    // Header background (top portion, clipped to rounded top)
+    sCtx.save();
+    sCtx.beginPath();
+    sCtx.moveTo(x + R, y);
+    sCtx.lineTo(x + BOX_W - R, y);
+    sCtx.quadraticCurveTo(x + BOX_W, y, x + BOX_W, y + R);
+    sCtx.lineTo(x + BOX_W, y + HDR_H);
+    sCtx.lineTo(x, y + HDR_H);
+    sCtx.lineTo(x, y + R);
+    sCtx.quadraticCurveTo(x, y, x + R, y);
+    sCtx.closePath();
+    sCtx.clip();
+    sCtx.fillStyle = "#0d0d0d";
+    sCtx.fillRect(x, y, BOX_W, HDR_H);
+    sCtx.restore();
+
+    // Separator line between header and body
+    sCtx.beginPath();
+    sCtx.moveTo(x + 1, y + HDR_H);
+    sCtx.lineTo(x + BOX_W - 1, y + HDR_H);
+    sCtx.strokeStyle = "rgba(255,255,255,0.06)";
+    sCtx.lineWidth = 1;
+    sCtx.stroke();
+
+    // Red square icon (visual anchor)
+    var iconSize = 6;
+    var iconX = x + 8;
+    var iconY = y + HDR_H / 2 - iconSize / 2;
+    sCtx.fillStyle = "#ea2845";
+    sCtx.fillRect(iconX, iconY, iconSize, iconSize);
+
+    // Entity name (after icon)
+    sCtx.fillStyle = "#e0e0e0";
+    sCtx.font = "bold 12px -apple-system, BlinkMacSystemFont, sans-serif";
+    sCtx.textAlign = "left";
+    sCtx.textBaseline = "middle";
+    var nameStr = n.name;
+    var nameStartX = iconX + iconSize + 6;
+    var maxNameW = BOX_W - (nameStartX - x) - 8;
+    while (sCtx.measureText(nameStr).width > maxNameW && nameStr.length > 3) {
+      nameStr = nameStr.slice(0, -1);
+    }
+    if (nameStr !== n.name) nameStr += "\\u2026";
+    sCtx.fillText(nameStr, nameStartX, y + HDR_H / 2);
+
+    if (showCols) {
+      // Draw column rows below header
+      var colY = y + HDR_H;
+      for (var c = 0; c < visibleColCount; c++) {
+        var col = cols[c];
+        // Column name (left-aligned)
+        sCtx.fillStyle = "#ccc";
+        sCtx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+        sCtx.textAlign = "left";
+        sCtx.textBaseline = "middle";
+        sCtx.fillText(col.name, x + 10, colY + COL_ROW_H / 2);
+        // Column type (right-aligned, dimmer)
+        sCtx.fillStyle = "#3b82f6";
+        sCtx.font = "10px monospace";
+        sCtx.textAlign = "right";
+        var typeStr = col.type;
+        while (sCtx.measureText(typeStr).width > 60 && typeStr.length > 3) {
+          typeStr = typeStr.slice(0, -1);
+        }
+        if (typeStr !== col.type) typeStr += "\\u2026";
+        sCtx.fillText(typeStr, x + BOX_W - 10, colY + COL_ROW_H / 2);
+        colY += COL_ROW_H;
+      }
+      // "+N more" indicator
+      if (hasMore) {
+        sCtx.fillStyle = "#666";
+        sCtx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+        sCtx.textAlign = "left";
+        sCtx.fillText("+" + (cols.length - MAX_VISIBLE_COLS) + " more", x + 10, colY + COL_ROW_H / 2);
+      }
+    } else {
+      // Meta line: "N cols · ~X KB"
+      sCtx.fillStyle = "#666";
+      sCtx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+      var metaStr = n.entity.columns.length + " cols  \\u00b7  " + n.sizeLabel;
+      var metaFull = metaStr;
+      var metaX = x + 8;
+      var maxMetaW = BOX_W - 16;
+      while (sCtx.measureText(metaStr).width > maxMetaW && metaStr.length > 3) {
+        metaStr = metaStr.slice(0, -1);
+      }
+      if (metaStr.length < metaFull.length) metaStr += "\\u2026";
+      sCtx.fillText(metaStr, metaX, y + HDR_H + (BOX_H - HDR_H) / 2);
+    }
+  }
+  sCtx.globalAlpha = 1;
+  sCtx.restore();
+}
+
+// Tooltip
+function sShowTooltip(entity, screenX, screenY) {
+  if (!sTooltipEl) return;
+  var colsHtml = "";
+  var maxCols = Math.min(entity.columns.length, 12);
+  for (var i = 0; i < maxCols; i++) {
+    var c = entity.columns[i];
+    colsHtml += '<li><span class="col-name">' + escHtml(c.name) + '</span> <span class="col-type">' + escHtml(c.type) + '</span></li>';
+  }
+  if (entity.columns.length > maxCols) {
+    colsHtml += '<li style="color:var(--text-dim)">+ ' + (entity.columns.length - maxCols) + ' more</li>';
+  }
+  var tableInfo = entity.tableName && entity.tableName !== entity.name
+    ? '<div class="tt-table">Table: ' + escHtml(entity.tableName) + '</div>'
+    : '';
+  sTooltipEl.innerHTML = '<div class="tt-name">' + escHtml(entity.name) + '</div>' +
+    tableInfo +
+    '<ul class="tt-cols">' + colsHtml + '</ul>' +
+    '<div class="tt-size">' + formatBytes(estimateRowSize(entity)) + ' est. row size</div>';
+  sTooltipEl.style.display = "block";
+
+  // Position tooltip near cursor but keep it within viewport
+  var mainRect = sCanvas.parentElement.getBoundingClientRect();
+  var tx = screenX + 16;
+  var ty = screenY - 10;
+  sTooltipEl.style.left = tx + "px";
+  sTooltipEl.style.top = ty + "px";
+
+  // Adjust if tooltip goes off-screen
+  requestAnimationFrame(function() {
+    var ttRect = sTooltipEl.getBoundingClientRect();
+    if (ttRect.right > mainRect.right - 8) {
+      sTooltipEl.style.left = (screenX - ttRect.width - 8) + "px";
+    }
+    if (ttRect.bottom > mainRect.bottom - 8) {
+      sTooltipEl.style.top = (screenY - ttRect.height - 8) + "px";
+    }
+  });
+}
+
+function sHideTooltip() {
+  if (sTooltipEl) sTooltipEl.style.display = "none";
+}
+
+function sShowRelBadge(rel, screenX, screenY) {
+  if (!sRelBadgeEl) return;
+  var label = sRelLabel(rel.type);
+  sRelBadgeEl.innerHTML =
+    '<span class="rb-type">' + label + '</span>' +
+    escHtml(rel.fromEntity) + '<span class="rb-arrow">&rarr;</span>' + escHtml(rel.toEntity) +
+    ' <span style="color:var(--text-dim);font-size:10px">' + escHtml(rel.propertyName) + '</span>';
+  sRelBadgeEl.style.display = "block";
+  var tx = screenX + 16;
+  var ty = screenY - 10;
+  sRelBadgeEl.style.left = tx + "px";
+  sRelBadgeEl.style.top = ty + "px";
+  requestAnimationFrame(function() {
+    var mainRect = sCanvas.parentElement.getBoundingClientRect();
+    var r = sRelBadgeEl.getBoundingClientRect();
+    if (r.right > mainRect.right - 8) sRelBadgeEl.style.left = (screenX - r.width - 8) + "px";
+    if (r.bottom > mainRect.bottom - 8) sRelBadgeEl.style.top = (screenY - r.height - 8) + "px";
+  });
+}
+
+function sHideRelBadge() {
+  if (sRelBadgeEl) sRelBadgeEl.style.display = "none";
+}
+
+// Canvas resize for schema
+function sResize() {
+  var container = sCanvas.parentElement;
+  sW = container.clientWidth;
+  sH = container.clientHeight;
+  sCanvas.width = sW * sDpr;
+  sCanvas.height = sH * sDpr;
+  sCanvas.style.width = sW + "px";
+  sCanvas.style.height = sH + "px";
+  sCtx.setTransform(sDpr, 0, 0, sDpr, 0, 0);
+  if (sFocusedMode && sSelectedEntity && sNodes.length > 0) {
+    sComputeStarLayout(sSelectedEntity);
+    sRouteAllEdges();
+    sCenterCamera();
+  }
+  sScheduleRedraw();
+}
+
+// Sidebar click → pan to entity
+function sPanToEntity(name) {
+  var node = sNodeMap[name];
+  if (!node) return;
+  sCamX = sW / 2 - node.x;
+  sCamY = sH / 2 - node.y;
+  sScheduleRedraw();
+}
+
+// Sidebar highlight sync
+function sSyncSidebarHighlight(entityName) {
+  var rows = document.querySelectorAll(".st-row[data-entity]");
+  for (var i = 0; i < rows.length; i++) {
+    var match = rows[i].dataset.entity === entityName;
+    rows[i].classList.toggle("st-selected", match);
+    if (match) {
+      rows[i].scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+}
+
+function renderSchema() {
+  var sidebarEl = document.getElementById("schema-entity-list");
+  sCanvas = document.getElementById("schema-canvas");
+  sTooltipEl = document.getElementById("schema-tooltip");
+  sRelBadgeEl = document.getElementById("schema-rel-badge");
+  if (!sidebarEl || !sCanvas || schema.entities.length === 0) return;
+
+  sCtx = sCanvas.getContext("2d");
+  sDpr = window.devicePixelRatio || 1;
+
+  // Build nodes from entities
+  for (var i = 0; i < schema.entities.length; i++) {
+    var entity = schema.entities[i];
+    var node = {
+      name: entity.name,
+      entity: entity,
+      x: 0, y: 0,
+      w: 180, h: 52,
+      sizeLabel: formatBytes(estimateRowSize(entity))
+    };
+    sNodes.push(node);
+    sNodeMap[entity.name] = node;
+  }
+
+  sAllNodes = sNodes.slice();
+  sAllNodeMap = {};
+  for (var i = 0; i < sAllNodes.length; i++) {
+    sAllNodeMap[sAllNodes[i].name] = sAllNodes[i];
+  }
+  sFocusedMode = schema.entities.length > 7;
+
+  // Set count badge
+  document.getElementById("schema-entity-count").textContent = schema.entities.length;
+
+  // Set dynamic sidebar title
+  var sTitleEl = document.getElementById("schema-sidebar-title");
+  if (sTitleEl && schema.orm) {
+    sTitleEl.textContent = schema.orm.charAt(0).toUpperCase() + schema.orm.slice(1) + " Tables";
+  }
+
+  // SVG icon constants
+  var ICON_TABLE = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--white)" stroke-width="1.2"><rect x="2" y="2" width="12" height="12" rx="1.5"/><line x1="2" y1="5.5" x2="14" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="14"/></svg>';
+  var ICON_TABLE_OPEN = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--white)" stroke-width="1.2"><rect x="2" y="2" width="12" height="12" rx="1.5"/><rect x="2" y="2" width="12" height="3.5" rx="1.5" fill="var(--white)" opacity="0.35"/><line x1="2" y1="5.5" x2="14" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="14"/></svg>';
+  var ICON_FOLDER_CLOSED = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--text-muted)" stroke-width="1.2"><path d="M2 4.5h4l1.5-1.5H14v10H2z"/></svg>';
+  var ICON_FOLDER_OPEN = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--text-muted)" stroke-width="1.2"><path d="M2 4.5h4l1.5-1.5H14v2H4L2 13V4.5z"/><path d="M4 7h11l-2 6H2z"/></svg>';
+  var ICON_KEY = '<svg viewBox="0 0 16 16" fill="none" stroke="#ea2845" stroke-width="1.3"><circle cx="5.5" cy="6.5" r="2.5"/><line x1="8" y1="6.5" x2="14" y2="6.5"/><line x1="12" y1="6.5" x2="12" y2="9"/><line x1="14" y1="6.5" x2="14" y2="9"/></svg>';
+  var ICON_COLUMN = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--text-dim)" stroke-width="1.2"><rect x="4" y="3" width="8" height="10" rx="1"/><line x1="6" y1="6" x2="10" y2="6"/><line x1="6" y1="8.5" x2="10" y2="8.5"/></svg>';
+  var ICON_FK = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--cat-architecture)" stroke-width="1.2"><circle cx="5" cy="8" r="2.5"/><line x1="7.5" y1="8" x2="14" y2="8"/><polyline points="11,5.5 14,8 11,10.5"/></svg>';
+  var ICON_INDEX = '<svg viewBox="0 0 16 16" fill="none" stroke="var(--cat-performance)" stroke-width="1.2"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="10" y2="8"/><line x1="3" y1="12" x2="7" y2="12"/></svg>';
+
+  // Tree row builder
+  function sBuildTreeRow(depth, toggleId, icon, labelHtml, extra, classes, dataAttrs) {
+    var h = '<div class="st-row' + (classes ? " " + classes : "") + '"' + (dataAttrs || "") + '>';
+    for (var d = 0; d < depth; d++) h += '<span class="st-indent"></span>';
+    if (toggleId) {
+      h += '<span class="st-toggle" data-toggle="' + toggleId + '">' + "\\u25B8" + '</span>';
+    } else {
+      h += '<span class="st-indent"></span>';
+    }
+    h += '<span class="st-icon">' + icon + '</span>';
+    h += '<span class="st-label">' + labelHtml + '</span>';
+    if (extra) h += extra;
+    h += '</div>';
+    return h;
+  }
+
+  // Build sidebar tree
+  var sidebarHtml = "";
+  var rootId = "root-tables";
+  sidebarHtml += sBuildTreeRow(0, rootId, ICON_FOLDER_OPEN, '<span class="st-group-name">tables</span>', '<span class="st-count">' + schema.entities.length + '</span>', "", "");
+  sidebarHtml += '<div class="st-children st-open" id="st-' + rootId + '">';
+
+  for (var i = 0; i < schema.entities.length; i++) {
+    var entity = schema.entities[i];
+    var entityId = "entity-" + i;
+    var displayName = entity.tableName || entity.name;
+    sidebarHtml += sBuildTreeRow(1, entityId, ICON_TABLE, '<span class="st-entity-name">' + escHtml(displayName) + '</span>', "", "", ' data-entity="' + escHtml(entity.name) + '"');
+    sidebarHtml += '<div class="st-children" id="st-' + entityId + '">';
+
+    // Columns group
+    if (entity.columns.length > 0) {
+      var colGroupId = entityId + "-cols";
+      sidebarHtml += sBuildTreeRow(2, colGroupId, ICON_FOLDER_CLOSED, '<span class="st-group-name">columns</span>', '<span class="st-count">' + entity.columns.length + '</span>', "", "");
+      sidebarHtml += '<div class="st-children" id="st-' + colGroupId + '">';
+      for (var c = 0; c < entity.columns.length; c++) {
+        var col = entity.columns[c];
+        var colIcon = col.isPrimary ? ICON_KEY : ICON_COLUMN;
+        var colExtra = '<span class="st-col-type">' + escHtml(col.type) + '</span>';
+        if (col.defaultValue) {
+          colExtra += '<span class="st-col-default">= ' + escHtml(col.defaultValue) + '</span>';
+        }
+        var colTags = [];
+        if (col.isNullable) colTags.push("null");
+        if (col.isGenerated) colTags.push("gen");
+        if (col.isUnique && !col.isPrimary) colTags.push("uniq");
+        if (colTags.length > 0) {
+          colExtra += '<span class="st-col-tags">' + colTags.join(" \\u00B7 ") + '</span>';
+        }
+        sidebarHtml += sBuildTreeRow(3, null, colIcon, escHtml(col.name), colExtra, "", "");
+      }
+      sidebarHtml += '</div>';
+    }
+
+    // Primary keys group
+    var pks = [];
+    for (var c = 0; c < entity.columns.length; c++) {
+      if (entity.columns[c].isPrimary) pks.push(entity.columns[c]);
+    }
+    if (pks.length > 0) {
+      var pkGroupId = entityId + "-keys";
+      sidebarHtml += sBuildTreeRow(2, pkGroupId, ICON_FOLDER_CLOSED, '<span class="st-group-name">keys</span>', '<span class="st-count">' + pks.length + '</span>', "", "");
+      sidebarHtml += '<div class="st-children" id="st-' + pkGroupId + '">';
+      var pkColNames = [];
+      for (var p = 0; p < pks.length; p++) { pkColNames.push(pks[p].name); }
+      var pkLabel = escHtml((entity.tableName || entity.name).toLowerCase() + '_pkey');
+      sidebarHtml += sBuildTreeRow(3, null, ICON_KEY, pkLabel, '<span class="st-col-type">(' + escHtml(pkColNames.join(", ")) + ')</span>', "", "");
+      sidebarHtml += '</div>';
+    }
+
+    // Foreign keys group (relations from this entity)
+    if (entity.relations.length > 0) {
+      var fkGroupId = entityId + "-fks";
+      sidebarHtml += sBuildTreeRow(2, fkGroupId, ICON_FOLDER_CLOSED, '<span class="st-group-name">foreign keys</span>', '<span class="st-count">' + entity.relations.length + '</span>', "", "");
+      sidebarHtml += '<div class="st-children" id="st-' + fkGroupId + '">';
+      for (var r = 0; r < entity.relations.length; r++) {
+        var rel = entity.relations[r];
+        var relLabel = sRelLabel(rel.type);
+        var fkName = escHtml((entity.tableName || entity.name).toLowerCase() + '_' + rel.propertyName + '_fkey');
+        sidebarHtml += sBuildTreeRow(3, null, ICON_FK, fkName, '<span class="st-col-type">(' + escHtml(rel.propertyName) + ')</span>' + '<span class="st-rel-type">' + relLabel + '</span>', "", "");
+      }
+      sidebarHtml += '</div>';
+    }
+
+    // Indexes group (unique non-PK columns)
+    var indexes = [];
+    for (var c = 0; c < entity.columns.length; c++) {
+      if (entity.columns[c].isUnique && !entity.columns[c].isPrimary) indexes.push(entity.columns[c]);
+    }
+    if (indexes.length > 0) {
+      var idxGroupId = entityId + "-idx";
+      sidebarHtml += sBuildTreeRow(2, idxGroupId, ICON_FOLDER_CLOSED, '<span class="st-group-name">indexes</span>', '<span class="st-count">' + indexes.length + '</span>', "", "");
+      sidebarHtml += '<div class="st-children" id="st-' + idxGroupId + '">';
+      for (var x = 0; x < indexes.length; x++) {
+        sidebarHtml += sBuildTreeRow(3, null, ICON_INDEX, escHtml(indexes[x].name), '<span class="st-col-type">' + escHtml(indexes[x].type) + '</span>', "", "");
+      }
+      sidebarHtml += '</div>';
+    }
+
+    sidebarHtml += '</div>'; // close entity children
+  }
+  sidebarHtml += '</div>'; // close root children
+  sidebarEl.innerHTML = sidebarHtml;
+
+  // Tree click handler
+  sidebarEl.addEventListener("click", function(e) {
+    var toggleAlreadyHandled = false;
+    var toggleEl = e.target.closest(".st-toggle");
+    if (toggleEl) {
+      var toggleId = toggleEl.dataset.toggle;
+      var childDiv = document.getElementById("st-" + toggleId);
+      if (childDiv) {
+        var isOpen = childDiv.classList.toggle("st-open");
+        toggleEl.textContent = isOpen ? "\\u25BE" : "\\u25B8";
+        // Swap folder icon if this row has one
+        var iconEl = toggleEl.parentElement.querySelector(".st-icon");
+        if (iconEl) {
+          var groupName = toggleEl.parentElement.querySelector(".st-group-name");
+          if (groupName) {
+            iconEl.innerHTML = isOpen ? ICON_FOLDER_OPEN : ICON_FOLDER_CLOSED;
+          } else if (toggleEl.closest(".st-row[data-entity]")) {
+            iconEl.innerHTML = isOpen ? ICON_TABLE_OPEN : ICON_TABLE;
+          }
+        }
+        toggleAlreadyHandled = true;
+      }
+      // If this toggle is on a non-entity row, stop here
+      var row = toggleEl.closest(".st-row");
+      if (!row || !row.dataset.entity) {
+        e.stopPropagation();
+        return;
+      }
+    }
+
+    // Clicking anywhere on a group row (not just the arrow) toggles it
+    if (!toggleEl) {
+      var clickedRow = e.target.closest(".st-row");
+      if (clickedRow && !clickedRow.dataset.entity) {
+        var rowToggle = clickedRow.querySelector(".st-toggle");
+        if (rowToggle) {
+          var tid = rowToggle.dataset.toggle;
+          var cd = document.getElementById("st-" + tid);
+          if (cd) {
+            var open = cd.classList.toggle("st-open");
+            rowToggle.textContent = open ? "\\u25BE" : "\\u25B8";
+            var ico = clickedRow.querySelector(".st-icon");
+            if (ico) {
+              var gn = clickedRow.querySelector(".st-group-name");
+              if (gn) ico.innerHTML = open ? ICON_FOLDER_OPEN : ICON_FOLDER_CLOSED;
+            }
+          }
+          return;
+        }
+      }
+    }
+
+    var entityRow = e.target.closest(".st-row[data-entity]");
+    if (!entityRow) return;
+    var entityName = entityRow.dataset.entity;
+
+    // Always select clicked entity (never deselect on close)
+    sSelectedEntity = entityName;
+    sSyncSidebarHighlight(sSelectedEntity);
+
+    // Toggle entity subtree open/closed (skip if arrow already handled it)
+    if (!toggleAlreadyHandled) {
+      var entityToggle = entityRow.querySelector(".st-toggle");
+      if (entityToggle) {
+        var eToggleId = entityToggle.dataset.toggle;
+        var eChildDiv = document.getElementById("st-" + eToggleId);
+        if (eChildDiv) {
+          var isOpen = eChildDiv.classList.toggle("st-open");
+          entityToggle.textContent = isOpen ? "\\u25BE" : "\\u25B8";
+          var eIconEl = entityRow.querySelector(".st-icon");
+          if (eIconEl) eIconEl.innerHTML = isOpen ? ICON_TABLE_OPEN : ICON_TABLE;
+        }
+      }
+    }
+
+    if (sFocusedMode) {
+      sSetVisibleSubset(sSelectedEntity);
+    } else {
+      if (sSelectedEntity) sPanToEntity(sSelectedEntity);
+      sScheduleRedraw();
+    }
+  });
+
+  // Expand All / Collapse All buttons
+  var expandAllBtn = document.getElementById("schema-expand-all");
+  var collapseAllBtn = document.getElementById("schema-collapse-all");
+  var entityListEl = document.getElementById("schema-entity-list");
+
+  if (expandAllBtn && entityListEl) {
+    expandAllBtn.addEventListener("click", function() {
+      var children = entityListEl.querySelectorAll(".st-children");
+      for (var i = 0; i < children.length; i++) {
+        children[i].classList.add("st-open");
+      }
+      var toggles = entityListEl.querySelectorAll(".st-toggle");
+      for (var j = 0; j < toggles.length; j++) {
+        toggles[j].textContent = "\\u25BE";
+      }
+      var entityRows = entityListEl.querySelectorAll(".st-row[data-entity]");
+      for (var k = 0; k < entityRows.length; k++) {
+        var ico = entityRows[k].querySelector(".st-icon");
+        if (ico) ico.innerHTML = ICON_TABLE_OPEN;
+      }
+    });
+  }
+
+  if (collapseAllBtn && entityListEl) {
+    collapseAllBtn.addEventListener("click", function() {
+      var children = entityListEl.querySelectorAll(".st-children");
+      for (var i = 0; i < children.length; i++) {
+        // Keep root-level groups open so entity list stays visible
+        if (children[i].id && children[i].id.indexOf("st-root-") === 0) continue;
+        children[i].classList.remove("st-open");
+      }
+      var toggles = entityListEl.querySelectorAll(".st-toggle");
+      for (var j = 0; j < toggles.length; j++) {
+        toggles[j].textContent = "\\u25B8";
+      }
+      var entityRows = entityListEl.querySelectorAll(".st-row[data-entity]");
+      for (var k = 0; k < entityRows.length; k++) {
+        var ico = entityRows[k].querySelector(".st-icon");
+        if (ico) ico.innerHTML = ICON_TABLE;
+      }
+    });
+  }
+
+  // Diagram control buttons
+  function sRecalcNodeSizes() {
+    var showCols = sShowCols !== null ? sShowCols : sNodes.length <= 5;
+    for (var i = 0; i < sNodes.length; i++) {
+      var cols = sNodes[i].entity.columns;
+      var visCount = showCols ? Math.min(cols.length, 7) : 0;
+      var hasMore = showCols && cols.length > 7;
+      sNodes[i].h = showCols ? 24 + visCount * 16 + (hasMore ? 16 : 0) + 8 : 52;
+      sNodes[i].w = 180;
+    }
+  }
+
+  var recenterBtn = document.getElementById("schema-recenter");
+  if (recenterBtn) {
+    recenterBtn.addEventListener("click", function() {
+      sCenterCamera();
+      sScheduleRedraw();
+    });
+  }
+
+  var expandTablesBtn = document.getElementById("schema-expand-tables");
+  if (expandTablesBtn) {
+    expandTablesBtn.addEventListener("click", function() {
+      sShowCols = true;
+      sRecalcNodeSizes();
+      if (sFocusedMode && sSelectedEntity) {
+        sSetVisibleSubset(sSelectedEntity);
+      } else {
+        sRouteAllEdges();
+        if (typeof dagre !== "undefined") sComputeDagreLayout();
+        sCenterCamera();
+        sScheduleRedraw();
+      }
+    });
+  }
+
+  var minimizeTablesBtn = document.getElementById("schema-minimize-tables");
+  if (minimizeTablesBtn) {
+    minimizeTablesBtn.addEventListener("click", function() {
+      sShowCols = false;
+      sRecalcNodeSizes();
+      if (sFocusedMode && sSelectedEntity) {
+        sSetVisibleSubset(sSelectedEntity);
+      } else {
+        sRouteAllEdges();
+        if (typeof dagre !== "undefined") sComputeDagreLayout();
+        sCenterCamera();
+        sScheduleRedraw();
+      }
+    });
+  }
+
+  // Canvas setup
+  sResize();
+  window.addEventListener("resize", function() {
+    if (activeTab === "schema") sResize();
+  });
+
+  // Layout initialization
+  if (sFocusedMode) {
+    var emptyState = document.getElementById("schema-empty-state");
+    if (emptyState) emptyState.style.display = "flex";
+    sCanvas.style.display = "none";
+    sNodes = [];
+    sNodeMap = {};
+    sEdgeRoutes = {};
+    sEdgeKeys = [];
+  } else {
+    sComputeDagreLayout();
+    sCenterCamera();
+  }
+
+  // Mouse interactions
+  sCanvas.addEventListener("mousedown", function(e) {
+    var rect = sCanvas.getBoundingClientRect();
+    var sx = e.clientX - rect.left;
+    var sy = e.clientY - rect.top;
+    var pos = sScreenToWorld(sx, sy);
+    var hit = sHitTestEntity(pos.x, pos.y);
+    sDragMoved = false;
+    if (hit) {
+      sDragging = hit;
+      sHideTooltip();
+      sHideRelBadge();
+    } else {
+      sPanning = true;
+      sPanStart = { x: e.clientX, y: e.clientY };
+    }
+  });
+
+  sCanvas.addEventListener("mousemove", function(e) {
+    var rect = sCanvas.getBoundingClientRect();
+    var sx = e.clientX - rect.left;
+    var sy = e.clientY - rect.top;
+    var pos = sScreenToWorld(sx, sy);
+
+    if (sDragging) {
+      sDragMoved = true;
+      sDragging.x = pos.x;
+      sDragging.y = pos.y;
+      sRerouteEdgesForNode(sDragging.name);
+      sScheduleRedraw();
+      sHideTooltip();
+      sHideRelBadge();
+    } else if (sPanning) {
+      sDragMoved = true;
+      sCamX += (e.clientX - sPanStart.x) / sZoom;
+      sCamY += (e.clientY - sPanStart.y) / sZoom;
+      sPanStart = { x: e.clientX, y: e.clientY };
+      sScheduleRedraw();
+      sHideTooltip();
+      sHideRelBadge();
+    } else {
+      // Hover detection
+      var hitEntity = sHitTestEntity(pos.x, pos.y);
+      var hitRel = hitEntity ? null : sHitTestRelation(pos.x, pos.y);
+
+      if (hitEntity !== sHoveredEntity) {
+        sHoveredEntity = hitEntity;
+        sCanvas.style.cursor = hitEntity ? "pointer" : "grab";
+        if (hitEntity) {
+          sShowTooltip(hitEntity.entity, sx, sy);
+        } else {
+          sHideTooltip();
+        }
+        sScheduleRedraw();
+      } else if (hitEntity) {
+        // Update tooltip position while hovering
+        sTooltipEl.style.left = (sx + 16) + "px";
+        sTooltipEl.style.top = (sy - 10) + "px";
+      }
+
+      if (hitRel !== sHoveredRelation) {
+        sHoveredRelation = hitRel;
+        if (!hitEntity) sCanvas.style.cursor = hitRel ? "pointer" : "grab";
+        if (hitRel) {
+          sShowRelBadge(hitRel, sx, sy);
+        } else {
+          sHideRelBadge();
+        }
+        sScheduleRedraw();
+      } else if (hitRel) {
+        sRelBadgeEl.style.left = (sx + 16) + "px";
+        sRelBadgeEl.style.top = (sy - 10) + "px";
+      }
+    }
+  });
+
+  sCanvas.addEventListener("mouseup", function() {
+    if (sDragging && !sDragMoved) {
+      sSelectedEntity = sSelectedEntity === sDragging.name ? null : sDragging.name;
+      sSyncSidebarHighlight(sSelectedEntity);
+      if (sFocusedMode) {
+        sSetVisibleSubset(sSelectedEntity);
+      } else {
+        sScheduleRedraw();
+      }
+    }
+    sDragging = null;
+    sPanning = false;
+    sDragMoved = false;
+  });
+
+  sCanvas.addEventListener("mouseleave", function() {
+    sHoveredEntity = null;
+    sHoveredRelation = null;
+    sHideTooltip();
+    sHideRelBadge();
+    sScheduleRedraw();
+  });
+
+  sCanvas.addEventListener("wheel", function(e) {
+    e.preventDefault();
+    var factor = e.deltaY > 0 ? 0.92 : 1.08;
+    sZoom = Math.max(0.2, Math.min(5, sZoom * factor));
+    sScheduleRedraw();
+  }, { passive: false });
+
+  // Initial draw
+  sScheduleRedraw();
+
+  // ── Schema diagnostics panel ──
+  var sDiagCountEl = document.getElementById("schema-diag-count");
+  var sDiagHeaderEl = document.getElementById("schema-diag-header");
+  var sDiagBodyEl = document.getElementById("schema-diag-body");
+  var sDiagListEl = document.getElementById("schema-diag-list");
+  var sDiagChevronEl = document.getElementById("schema-diag-chevron");
+
+  if (sDiagCountEl && sDiagHeaderEl && sDiagBodyEl && sDiagListEl && sDiagChevronEl) {
+    var schemaDiags = [];
+    for (var di = 0; di < diagnostics.length; di++) {
+      if (diagnostics[di].category === "schema") schemaDiags.push(diagnostics[di]);
+    }
+
+    var diagCount = schemaDiags.length;
+    sDiagCountEl.textContent = diagCount + (diagCount === 1 ? " issue" : " issues");
+    if (diagCount > 0) {
+      sDiagCountEl.classList.add("has-issues");
+    }
+
+    if (diagCount === 0) {
+      sDiagListEl.innerHTML = '<div class="sd-empty">No schema issues found</div>';
+    } else {
+      var diagHtml = "";
+      for (var si = 0; si < schemaDiags.length; si++) {
+        var sd = schemaDiags[si];
+        var sevColor = sd.severity === "error" ? "var(--sev-error)" : sd.severity === "warning" ? "var(--sev-warning)" : "var(--sev-info)";
+
+        // Extract entity name from message
+        var sdEntityName = "";
+        var onMatch = sd.message.match(/on '([^']+)'/);
+        var firstMatch = sd.message.match(/'([^']+)'/);
+        if (onMatch && sAllNodeMap[onMatch[1]]) {
+          sdEntityName = onMatch[1];
+        } else if (firstMatch && sAllNodeMap[firstMatch[1]]) {
+          sdEntityName = firstMatch[1];
+        }
+
+        diagHtml += '<div class="sd-item">';
+        diagHtml += '<span class="sev-dot" style="background:' + sevColor + '"></span>';
+        diagHtml += '<span class="sd-rule">' + escHtml(sd.rule) + '</span>';
+        if (sdEntityName) {
+          diagHtml += '<span class="sd-entity" data-entity="' + escHtml(sdEntityName) + '">' + escHtml(sdEntityName) + '</span>';
+        }
+        diagHtml += '<span class="sd-msg">' + escHtml(sd.message) + '</span>';
+        diagHtml += '</div>';
+      }
+      sDiagListEl.innerHTML = diagHtml;
+    }
+
+    // Toggle panel
+    sDiagHeaderEl.addEventListener("click", function() {
+      var isOpen = sDiagBodyEl.style.display !== "none";
+      sDiagBodyEl.style.display = isOpen ? "none" : "block";
+      sDiagChevronEl.classList.toggle("open", !isOpen);
+      sResize();
+    });
+
+    // Entity click navigation
+    sDiagListEl.addEventListener("click", function(e) {
+      var entityEl = e.target.closest(".sd-entity");
+      if (!entityEl) return;
+      var name = entityEl.dataset.entity;
+      if (!name) return;
+
+      sSelectedEntity = name;
+      sSyncSidebarHighlight(name);
+      if (sFocusedMode) {
+        sSetVisibleSubset(name);
+      } else {
+        sPanToEntity(name);
+        sScheduleRedraw();
+      }
+    });
+  }
 }
 
 switchTab("summary");`;

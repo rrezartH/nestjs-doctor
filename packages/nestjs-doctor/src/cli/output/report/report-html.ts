@@ -19,6 +19,7 @@ export function getReportHtml(): string {
   <button class="tab-btn" data-tab="diagnosis">Diagnosis <span class="count-badge" id="diagnosis-count-badge"></span></button>
   <button class="tab-btn" data-tab="modules">Modules Graph</button>
   <button class="tab-btn" data-tab="lab">Lab</button>
+  <button class="tab-btn" data-tab="schema" id="tab-btn-schema" style="display:none">Schema</button>
   <div class="tab-spacer"></div>
   <div class="tab-controls" id="graph-controls">
     <select id="project-filter"><option value="all">All projects</option></select>
@@ -170,6 +171,74 @@ for (let i = 0; i < lines.length; i++) {
         <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
       </svg>
       <p>Write a check function and click Run</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab: Schema ── -->
+<div class="tab-content" id="tab-schema">
+  <div id="schema-sidebar">
+    <div class="schema-sidebar-sticky">
+      <div class="schema-sidebar-header">
+        <span class="schema-sidebar-title" id="schema-sidebar-title">Tables</span>
+        <span class="schema-entity-count" id="schema-entity-count"></span>
+        <span style="flex:1"></span>
+        <button class="st-btn" id="schema-expand-all" title="Expand all">
+          <svg viewBox="0 0 17 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="1" y1="3" x2="8" y2="3"/><line x1="1" y1="7" x2="8" y2="7"/><line x1="1" y1="11" x2="8" y2="11"/>
+            <path d="M11 5l2.5 3L16 5"/>
+          </svg>
+        </button>
+        <button class="st-btn" id="schema-collapse-all" title="Collapse all">
+          <svg viewBox="0 0 17 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="1" y1="3" x2="8" y2="3"/><line x1="1" y1="7" x2="8" y2="7"/><line x1="1" y1="11" x2="8" y2="11"/>
+            <path d="M11 11l2.5-3L16 11"/>
+          </svg>
+        </button>
+      </div>
+      <div class="schema-disclaimer">Schema inferred from source code — may not reflect the actual database.</div>
+    </div>
+    <div id="schema-entity-list"></div>
+  </div>
+  <div id="schema-main">
+    <div id="schema-canvas-wrap">
+      <div id="schema-empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        <p>Select an entity from the sidebar to explore its schema</p>
+      </div>
+      <div id="schema-toolbar">
+        <button class="st-btn schema-diagram-btn" id="schema-recenter" title="Re-center diagram">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
+          </svg>
+        </button>
+        <button class="st-btn schema-diagram-btn" id="schema-expand-tables" title="Expand tables">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
+        <button class="st-btn schema-diagram-btn" id="schema-minimize-tables" title="Minimize tables">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
+      </div>
+      <canvas id="schema-canvas"></canvas>
+      <div id="schema-tooltip" class="schema-tooltip" style="display:none"></div>
+      <div id="schema-rel-badge" class="schema-rel-badge" style="display:none"></div>
+    </div>
+    <div id="schema-diag-panel">
+      <div id="schema-diag-header">
+        <svg class="schema-diag-chevron" id="schema-diag-chevron" width="10" height="10" viewBox="0 0 10 10"><path d="M3 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="schema-diag-title">Problems</span>
+        <span class="schema-diag-count" id="schema-diag-count">0</span>
+      </div>
+      <div id="schema-diag-body" style="display:none">
+        <div id="schema-diag-list"></div>
+      </div>
     </div>
   </div>
 </div>

@@ -18,8 +18,9 @@ function toRange(line: number, column: number) {
 }
 
 function toLspDiagnostic(d: Diagnostic): LspDiagnostic {
+	const range = "line" in d ? toRange(d.line, d.column) : toRange(1, 1);
 	return {
-		range: toRange(d.line, d.column),
+		range,
 		severity: severityMap[d.severity],
 		code: d.rule,
 		source: "nestjs-doctor",

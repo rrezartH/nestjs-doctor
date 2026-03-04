@@ -49,10 +49,16 @@ export function generateReport(
 ): string {
 	const graph = serializeModuleGraph(moduleGraph, result, options?.projects);
 
-	const diagnosticsWithoutSource = result.diagnostics.map(
-		({ sourceLines: _sl, ...rest }) => rest
+	const diagnosticsWithoutSource = result.diagnostics.map((d) => {
+		if ("sourceLines" in d) {
+			const { sourceLines: _sl, ...rest } = d;
+			return rest;
+		}
+		return d;
+	});
+	const sourceLinesArray = result.diagnostics.map((d) =>
+		"sourceLines" in d ? (d.sourceLines ?? null) : null
 	);
-	const sourceLinesArray = result.diagnostics.map((d) => d.sourceLines ?? null);
 
 	const graphJson = safeJsonForScript(JSON.stringify(graph));
 	const projectJson = safeJsonForScript(
@@ -79,6 +85,9 @@ export function generateReport(
 		options?.providers ?? new Map()
 	);
 	const providersJson = safeJsonForScript(JSON.stringify(serializedProviders));
+	const schemaJson = safeJsonForScript(
+		JSON.stringify(result.schema ?? { entities: [], relations: [], orm: "" })
+	);
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -111,10 +120,11 @@ export function generateReport(
   }
 }
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js" integrity="sha512-psLUZfcgPmi012lcpVHkWoOqyztollwCGu4w/mXijFMK/YcdUdP06voJNVOJ7f/dUIlO2tGlDLuypRyXX2lcvQ==" crossorigin="anonymous"></script>
 </head>
 <body>
 ${getReportHtml()}
-<script>${getReportScripts({ graphJson, projectJson, diagnosticsJson, summaryJson, elapsedMsJson, sourceLinesJson, examplesJson, fileSourcesJson, providersJson })}</script>
+<script>${getReportScripts({ graphJson, projectJson, diagnosticsJson, summaryJson, elapsedMsJson, sourceLinesJson, examplesJson, fileSourcesJson, providersJson, schemaJson })}</script>
 <script type="module">
 import { basicSetup, EditorView } from "codemirror";
 import { EditorState } from "@codemirror/state";
