@@ -12,15 +12,21 @@ import {
 	runFileRules,
 	runProjectRules,
 	runRules,
+	runSchemaRules,
 	separateRules,
 } from "../engine/rule-runner.js";
+import {
+	extractSchema,
+	serializeSchemaGraph,
+	updateSchemaForFile,
+} from "../engine/schema/extract.js";
 import type { ProviderInfo } from "../engine/type-resolver.js";
 import {
 	resolveProviders,
 	updateProvidersForFile,
 } from "../engine/type-resolver.js";
 import { allRules } from "../rules/index.js";
-import type { AnyRule, ProjectRule, Rule } from "../rules/types.js";
+import type { AnyRule, ProjectRule, Rule, SchemaRule } from "../rules/types.js";
 import { calculateScore } from "../scorer/index.js";
 import type { NestjsDoctorConfig } from "../types/config.js";
 import type { Diagnostic } from "../types/diagnostic.js";
@@ -31,6 +37,7 @@ import type {
 	RuleErrorInfo,
 	SubProjectResult,
 } from "../types/result.js";
+import type { SchemaGraph } from "../types/schema.js";
 import { loadConfig } from "./config-loader.js";
 import { collectFiles, collectMonorepoFiles } from "./file-collector.js";
 import { filterIgnoredDiagnostics } from "./filter-diagnostics.js";
@@ -54,6 +61,7 @@ export interface ScanResult {
 	moduleGraph: ModuleGraph;
 	providers: Map<string, ProviderInfo>;
 	result: DiagnoseResult;
+	schemaGraph: SchemaGraph;
 }
 
 export interface MonorepoScanResult {
@@ -70,6 +78,8 @@ export interface ScanContext {
 	moduleGraph: ModuleGraph;
 	projectRules: ProjectRule[];
 	providers: Map<string, ProviderInfo>;
+	schemaGraph?: SchemaGraph;
+	schemaRules: SchemaRule[];
 	targetPath: string;
 }
 
@@ -78,17 +88,19 @@ export async function prepareScan(
 	options: ScanOptions = {}
 ): Promise<{ context: ScanContext; customRuleWarnings: string[] }> {
 	const config = await loadConfig(targetPath, options.config);
-	const [{ rules: customRules, warnings: customRuleWarnings }, files] =
+	const [{ rules: customRules, warnings: customRuleWarnings }, files, project] =
 		await Promise.all([
 			resolveCustomRules(config, targetPath),
 			collectFiles(targetPath, config),
+			detectProject(targetPath),
 		]);
 	const combinedRules = mergeRules(allRules, customRules, customRuleWarnings);
 	const astProject = createAstParser(files);
 	const moduleGraph = buildModuleGraph(astProject, files);
 	const providers = resolveProviders(astProject, files);
 	const rules = filterRules(config, combinedRules);
-	const { fileRules, projectRules } = separateRules(rules);
+	const { fileRules, projectRules, schemaRules } = separateRules(rules);
+	const schemaGraph = extractSchema(astProject, files, project.orm, targetPath);
 
 	const context: ScanContext = {
 		astProject,
@@ -98,6 +110,8 @@ export async function prepareScan(
 		moduleGraph,
 		projectRules,
 		providers,
+		schemaGraph,
+		schemaRules,
 		targetPath,
 	};
 
@@ -118,6 +132,14 @@ export function updateFile(context: ScanContext, filePath: string): void {
 
 	updateModuleGraphForFile(context.moduleGraph, context.astProject, filePath);
 	updateProvidersForFile(context.providers, context.astProject, filePath);
+	if (context.schemaGraph) {
+		updateSchemaForFile(
+			context.schemaGraph,
+			context.astProject,
+			filePath,
+			context.targetPath
+		);
+	}
 }
 
 export function scanFile(
@@ -212,6 +234,27 @@ export async function scan(
 	const ruleErrors = [...fileResult.errors, ...projectResult.errors];
 
 	const project = await projectPromise;
+	const schemaGraph =
+		context.schemaGraph ??
+		extractSchema(context.astProject, context.files, project.orm, targetPath);
+
+	// Run schema rules if schema was extracted
+	if (schemaGraph.entities.size > 0 && context.schemaRules.length > 0) {
+		const schemaResult = runSchemaRules(schemaGraph, context.schemaRules);
+		const filteredSchemaDiagnostics = filterIgnoredDiagnostics(
+			schemaResult.diagnostics,
+			context.config,
+			targetPath
+		);
+		diagnostics.push(...filteredSchemaDiagnostics);
+		ruleErrors.push(
+			...schemaResult.errors.map((e) => ({
+				ruleId: e.ruleId,
+				error: formatRuleError(e.error),
+			}))
+		);
+	}
+
 	const score = calculateScore(diagnostics, context.files.length);
 	const summary = buildSummary(diagnostics);
 	const elapsedMs = performance.now() - startTime;
@@ -227,11 +270,13 @@ export async function scan(
 		summary,
 		ruleErrors,
 		elapsedMs,
+		schema: serializeSchemaGraph(schemaGraph),
 	};
 
 	return {
 		result,
 		moduleGraph: context.moduleGraph,
+		schemaGraph,
 		customRuleWarnings,
 		files: context.files,
 		providers: context.providers,
@@ -307,7 +352,14 @@ export async function scanMonorepo(
 				const astProject = createAstParser(files);
 				const moduleGraph = buildModuleGraph(astProject, files);
 				const providers = resolveProviders(astProject, files);
+				const subSchemaGraph = extractSchema(
+					astProject,
+					files,
+					project.orm,
+					projectPath
+				);
 				const rules = filterRules(projectConfig, combinedRules);
+				const { schemaRules: subSchemaRules } = separateRules(rules);
 				const { diagnostics: rawDiagnostics, errors } = runRules(
 					astProject,
 					files,
@@ -319,13 +371,30 @@ export async function scanMonorepo(
 					projectConfig,
 					projectPath
 				);
-
-				const score = calculateScore(diagnostics, files.length);
-				const summary = buildSummary(diagnostics);
 				const ruleErrors: RuleErrorInfo[] = errors.map((e) => ({
 					ruleId: e.ruleId,
 					error: formatRuleError(e.error),
 				}));
+
+				// Run schema rules if schema was extracted
+				if (subSchemaGraph.entities.size > 0 && subSchemaRules.length > 0) {
+					const schemaResult = runSchemaRules(subSchemaGraph, subSchemaRules);
+					const filteredSchemaDiagnostics = filterIgnoredDiagnostics(
+						schemaResult.diagnostics,
+						projectConfig,
+						projectPath
+					);
+					diagnostics.push(...filteredSchemaDiagnostics);
+					ruleErrors.push(
+						...schemaResult.errors.map((e) => ({
+							ruleId: e.ruleId,
+							error: formatRuleError(e.error),
+						}))
+					);
+				}
+
+				const score = calculateScore(diagnostics, files.length);
+				const summary = buildSummary(diagnostics);
 
 				const result: DiagnoseResult = {
 					score,
@@ -338,6 +407,7 @@ export async function scanMonorepo(
 					summary,
 					ruleErrors,
 					elapsedMs: 0,
+					schema: serializeSchemaGraph(subSchemaGraph),
 				};
 
 				return { name, result, moduleGraph, diagnostics, ruleErrors };
@@ -415,6 +485,7 @@ function buildSummary(diagnostics: Diagnostic[]): DiagnoseSummary {
 			performance: 0,
 			correctness: 0,
 			architecture: 0,
+			schema: 0,
 		},
 	};
 

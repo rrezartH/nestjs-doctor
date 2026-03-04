@@ -13,18 +13,32 @@ export {
 	updateFile,
 } from "../core/scanner.js";
 export { updateModuleGraphForFile } from "../engine/module-graph.js";
+export { extractSchema } from "../engine/schema/extract.js";
 export { updateProvidersForFile } from "../engine/type-resolver.js";
 export { getRules } from "../rules/index.js";
 export type {
 	AnyRule,
+	CodeRuleContext,
 	ProjectRule,
 	ProjectRuleContext,
 	Rule,
-	RuleContext,
 	RuleMeta,
+	SchemaRule,
+	SchemaRuleContext,
 } from "../rules/types.js";
 export type { NestjsDoctorConfig } from "../types/config.js";
-export type { Category, Diagnostic, Severity } from "../types/diagnostic.js";
+export type {
+	BaseDiagnostic,
+	Category,
+	CodeDiagnostic,
+	Diagnostic,
+	SchemaDiagnostic,
+	Severity,
+} from "../types/diagnostic.js";
+export {
+	isCodeDiagnostic,
+	isSchemaDiagnostic,
+} from "../types/diagnostic.js";
 export {
 	ConfigurationError,
 	NestjsDoctorError,
@@ -40,6 +54,13 @@ export type {
 	Score,
 	SubProjectResult,
 } from "../types/result.js";
+export type {
+	SchemaColumn,
+	SchemaEntity,
+	SchemaGraph,
+	SchemaRelation,
+	SerializedSchemaGraph,
+} from "../types/schema.js";
 
 function validatePath(path: string): string {
 	if (!path || path.trim() === "") {
