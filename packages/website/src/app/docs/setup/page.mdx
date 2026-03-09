@@ -138,9 +138,9 @@ For tooling that needs fine-grained control — such as editor integrations and 
 import {
   prepareScan,
   updateFile,
-  scanFile,
-  scanAllFiles,
-  scanProject,
+  checkFile,
+  checkAllFiles,
+  checkProject,
   updateModuleGraphForFile,
   updateProvidersForFile,
   getRules,
@@ -157,13 +157,13 @@ const { context, customRuleWarnings } = await prepareScan("./my-nestjs-app");
 updateFile(context, "/absolute/path/to/changed-file.ts");
 
 // 3. Re-scan just that file (file-scoped rules only)
-const { diagnostics, errors } = scanFile(context, "/absolute/path/to/changed-file.ts");
+const { diagnostics, errors } = checkFile(context, "/absolute/path/to/changed-file.ts");
 
 // 4. Or re-run all file-scoped rules across every file
-const allFileResults = scanAllFiles(context);
+const allFileResults = checkAllFiles(context);
 
 // 5. Or re-run project-scoped rules (module graph, circular deps, etc.)
-const projectResults = scanProject(context);
+const projectResults = checkProject(context);
 ```
 
 ### Granular Updates

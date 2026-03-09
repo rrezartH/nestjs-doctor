@@ -1,4 +1,13 @@
 import type { Project } from "ts-morph";
+import type { NestjsDoctorConfig } from "../common/config.js";
+import type {
+	CodeDiagnostic,
+	Diagnostic,
+	SchemaDiagnostic,
+	SourceLine,
+} from "../common/diagnostic.js";
+import type { SchemaGraph } from "../common/schema.js";
+import type { ModuleGraph } from "./module-graph.js";
 import type {
 	AnyRule,
 	CodeRuleContext,
@@ -7,17 +16,8 @@ import type {
 	Rule,
 	SchemaRule,
 	SchemaRuleContext,
-} from "../rules/types.js";
-import { isProjectRule, isSchemaRule } from "../rules/types.js";
-import type { NestjsDoctorConfig } from "../types/config.js";
-import type {
-	CodeDiagnostic,
-	Diagnostic,
-	SchemaDiagnostic,
-	SourceLine,
-} from "../types/diagnostic.js";
-import type { SchemaGraph } from "../types/schema.js";
-import type { ModuleGraph } from "./module-graph.js";
+} from "./rules/types.js";
+import { isProjectRule, isSchemaRule } from "./rules/types.js";
 import type { ProviderInfo } from "./type-resolver.js";
 
 interface RuleError {
@@ -193,21 +193,4 @@ export function runSchemaRules(
 	}
 
 	return { diagnostics, errors };
-}
-
-export function runRules(
-	project: Project,
-	files: string[],
-	rules: AnyRule[],
-	options: RunRulesOptions
-): RunRulesResult {
-	const { fileRules, projectRules } = separateRules(rules);
-
-	const fileResult = runFileRules(project, files, fileRules, options.config);
-	const projectResult = runProjectRules(project, files, projectRules, options);
-
-	return {
-		diagnostics: [...fileResult.diagnostics, ...projectResult.diagnostics],
-		errors: [...fileResult.errors, ...projectResult.errors],
-	};
 }

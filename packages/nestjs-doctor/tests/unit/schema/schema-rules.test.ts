@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { requireCascadeRule } from "../../../src/rules/schema/require-cascade-rule.js";
-import { requirePrimaryKey } from "../../../src/rules/schema/require-primary-key.js";
-import { requireTimestamps } from "../../../src/rules/schema/require-timestamps.js";
-import type { SchemaRule } from "../../../src/rules/types.js";
-import type { SchemaDiagnostic } from "../../../src/types/diagnostic.js";
+import type { SchemaDiagnostic } from "../../../src/common/diagnostic.js";
 import type {
 	SchemaColumn,
 	SchemaEntity,
 	SchemaGraph,
 	SchemaRelation,
-} from "../../../src/types/schema.js";
+} from "../../../src/common/schema.js";
+import { requireCascadeRule } from "../../../src/engine/rules/schema/require-cascade-rule.js";
+import { requirePrimaryKey } from "../../../src/engine/rules/schema/require-primary-key.js";
+import { requireTimestamps } from "../../../src/engine/rules/schema/require-timestamps.js";
+import type { SchemaRule } from "../../../src/engine/rules/types.js";
 
 function runSchemaRule(
 	rule: SchemaRule,

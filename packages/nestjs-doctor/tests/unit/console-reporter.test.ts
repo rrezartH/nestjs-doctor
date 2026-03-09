@@ -7,12 +7,12 @@ import {
 	getStarRating,
 	printFramedBox,
 } from "../../src/cli/formatters/console-reporter.js";
-import type { Diagnostic } from "../../src/types/diagnostic.js";
+import type { Diagnostic } from "../../src/common/diagnostic.js";
 
 const FILLED_BLOCK_REGEX = /^█+$/;
 const EMPTY_BLOCK_REGEX = /^░+$/;
 
-import type { DiagnoseResult } from "../../src/types/result.js";
+import type { DiagnoseResult } from "../../src/common/result.js";
 
 function makeDiagnostic(overrides: Partial<Diagnostic> = {}): Diagnostic {
 	return {

@@ -24,12 +24,12 @@ interface ScanResult {
 }
 
 interface NestjsDoctorApi {
+	checkAllFiles(context: ScanContext): ScanResult;
+	checkFile(context: ScanContext, filePath: string): ScanResult;
+	checkProject(context: ScanContext): ScanResult;
 	prepareScan(
 		path: string
 	): Promise<{ context: ScanContext; customRuleWarnings: string[] }>;
-	scanAllFiles(context: ScanContext): ScanResult;
-	scanFile(context: ScanContext, filePath: string): ScanResult;
-	scanProject(context: ScanContext): ScanResult;
 	updateFile(context: ScanContext, filePath: string): void;
 }
 
@@ -51,9 +51,9 @@ function handleFileChanged(api: NestjsDoctorApi, filePath: string) {
 	}
 	const start = performance.now();
 	api.updateFile(ctx, filePath);
-	const fileResult = api.scanFile(ctx, filePath);
+	const fileResult = api.checkFile(ctx, filePath);
 	fileDiagCache.set(filePath, fileResult.diagnostics);
-	const projectResult = api.scanProject(ctx);
+	const projectResult = api.checkProject(ctx);
 	const elapsedMs = performance.now() - start;
 	post({
 		kind: "result",
@@ -68,7 +68,7 @@ function handleFullScan(api: NestjsDoctorApi) {
 		return;
 	}
 	const start = performance.now();
-	const fileResult = api.scanAllFiles(ctx);
+	const fileResult = api.checkAllFiles(ctx);
 	fileDiagCache.clear();
 	for (const d of fileResult.diagnostics as Array<{ filePath?: string }>) {
 		const key = d.filePath ?? "";
@@ -79,7 +79,7 @@ function handleFullScan(api: NestjsDoctorApi) {
 		}
 		list.push(d);
 	}
-	const projectResult = api.scanProject(ctx);
+	const projectResult = api.checkProject(ctx);
 	const elapsedMs = performance.now() - start;
 	post({
 		kind: "result",

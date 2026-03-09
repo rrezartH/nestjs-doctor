@@ -1,5 +1,5 @@
-import type { MonorepoScanResult, ScanResult } from "../core/scanner.js";
-import type { DiagnoseResult } from "../types/result.js";
+import type { DiagnoseResult } from "../common/result.js";
+import type { MonorepoScanResult, ScanResult } from "../engine/scanner.js";
 import {
 	printConsoleReport,
 	printMonorepoReport,

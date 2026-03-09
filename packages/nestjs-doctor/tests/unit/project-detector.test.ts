@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	detectMonorepo,
 	detectProject,
-} from "../../src/core/project-detector.js";
+} from "../../src/engine/project-detector.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 

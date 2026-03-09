@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadConfig } from "../../src/core/config-loader.js";
-import { DEFAULT_CONFIG } from "../../src/types/config.js";
+import { DEFAULT_CONFIG } from "../../src/common/config.js";
+import { loadConfig } from "../../src/engine/config-loader.js";
 
 const tempRootDirectory = fs.mkdtempSync(
 	path.join(os.tmpdir(), "nestjs-doctor-config-test-")

@@ -1,13 +1,9 @@
 import { createRequire } from "node:module";
 import { defineCommand, runMain } from "citty";
-import { detectMonorepo } from "../core/project-detector.js";
+import { detectMonorepo } from "../engine/project-detector.js";
 import { flags } from "./flags.js";
-import {
-	type CliArgs,
-	CliSetup,
-	MonorepoPipeline,
-	SingleProjectPipeline,
-} from "./pipeline.js";
+import { MonorepoPipeline, SingleProjectPipeline } from "./pipeline.js";
+import { type CliArgs, CliSetup } from "./setup.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../../package.json") as { version: string };
@@ -45,18 +41,22 @@ const main = defineCommand({
 		const monorepo = await detectMonorepo(targetPath);
 		if (monorepo) {
 			await new MonorepoPipeline(targetPath, monorepo, options)
-				.scan()
+				.resolveConfig()
+				.buildContext()
+				.runRules()
+				.buildResult()
 				.warnCustomRules()
-				.loadConfig()
 				.output()
 				.run();
 			return;
 		}
 
 		await new SingleProjectPipeline(targetPath, options)
-			.scan()
+			.resolveConfig()
+			.buildContext()
+			.runRules()
+			.buildResult()
 			.warnCustomRules()
-			.loadConfig()
 			.output()
 			.run();
 	},

@@ -1,7 +1,7 @@
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
-import { noRepositoryInControllers } from "../../../src/rules/architecture/no-repository-in-controllers.js";
-import type { Diagnostic } from "../../../src/types/diagnostic.js";
+import type { Diagnostic } from "../../../src/common/diagnostic.js";
+import { noRepositoryInControllers } from "../../../src/engine/rules/architecture/no-repository-in-controllers.js";
 
 function runRule(code: string): Diagnostic[] {
 	const project = new Project({ useInMemoryFileSystem: true });
