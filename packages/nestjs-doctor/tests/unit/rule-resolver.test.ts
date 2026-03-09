@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
 	mergeRules,
 	resolveCustomRules,
-} from "../../src/core/rule-resolver.js";
-import type { AnyRule } from "../../src/rules/types.js";
+} from "../../src/engine/rule-resolver.js";
+import type { AnyRule } from "../../src/engine/rules/types.js";
 
 const fixturesDir = path.resolve(
 	import.meta.dirname,

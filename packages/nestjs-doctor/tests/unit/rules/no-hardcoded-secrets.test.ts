@@ -1,7 +1,7 @@
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
-import { noHardcodedSecrets } from "../../../src/rules/security/no-hardcoded-secrets.js";
-import type { Diagnostic } from "../../../src/types/diagnostic.js";
+import type { Diagnostic } from "../../../src/common/diagnostic.js";
+import { noHardcodedSecrets } from "../../../src/engine/rules/security/no-hardcoded-secrets.js";
 
 function runRule(code: string): Diagnostic[] {
 	const project = new Project({ useInMemoryFileSystem: true });

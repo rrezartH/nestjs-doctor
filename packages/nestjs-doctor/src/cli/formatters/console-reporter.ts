@@ -1,5 +1,5 @@
-import type { Diagnostic } from "../../types/diagnostic.js";
-import type { DiagnoseResult, MonorepoResult } from "../../types/result.js";
+import type { Diagnostic } from "../../common/diagnostic.js";
+import type { DiagnoseResult, MonorepoResult } from "../../common/result.js";
 import { highlighter } from "../ui/highlighter.js";
 import { logger } from "../ui/logger.js";
 

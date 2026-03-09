@@ -1,13 +1,17 @@
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+import type { NestjsDoctorConfig } from "../../src/common/config.js";
+import type { SchemaEntity, SchemaGraph } from "../../src/common/schema.js";
 import {
 	runFileRules,
 	runSchemaRules,
 	separateRules,
 } from "../../src/engine/rule-runner.js";
-import type { AnyRule, Rule, SchemaRule } from "../../src/rules/types.js";
-import type { NestjsDoctorConfig } from "../../src/types/config.js";
-import type { SchemaEntity, SchemaGraph } from "../../src/types/schema.js";
+import type {
+	AnyRule,
+	Rule,
+	SchemaRule,
+} from "../../src/engine/rules/types.js";
 
 function makeFileRule(id: string): AnyRule {
 	return {

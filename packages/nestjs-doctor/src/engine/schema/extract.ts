@@ -4,7 +4,7 @@ import type {
 	SchemaGraph,
 	SchemaRelation,
 	SerializedSchemaGraph,
-} from "../../types/schema.js";
+} from "../../common/schema.js";
 import { prismaExtractor } from "./prisma-extractor.js";
 import { typeormExtractor } from "./typeorm-extractor.js";
 

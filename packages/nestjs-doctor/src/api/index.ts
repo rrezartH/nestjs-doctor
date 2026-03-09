@@ -1,22 +1,54 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { scan, scanMonorepo } from "../core/scanner.js";
-import { ValidationError } from "../types/errors.js";
+import { ValidationError } from "../common/errors.js";
+import type { MonorepoResult } from "../common/result.js";
+import { detectMonorepo } from "../engine/project-detector.js";
+import {
+	buildScanContext,
+	buildScanResult,
+	resolveScanConfig,
+	runRules,
+	scanMonorepo,
+} from "../engine/scanner.js";
 
-export type { AutoScanResult, ScanContext } from "../core/scanner.js";
+export type { NestjsDoctorConfig } from "../common/config.js";
+export type {
+	BaseDiagnostic,
+	Category,
+	CodeDiagnostic,
+	Diagnostic,
+	SchemaDiagnostic,
+	Severity,
+} from "../common/diagnostic.js";
 // biome-ignore lint/performance/noBarrelFile: this is the public API surface
 export {
-	autoScan,
-	prepareScan,
-	scanAllFiles,
-	scanFile,
-	scanProject,
-	updateFile,
-} from "../core/scanner.js";
+	isCodeDiagnostic,
+	isSchemaDiagnostic,
+} from "../common/diagnostic.js";
+export {
+	ConfigurationError,
+	NestjsDoctorError,
+	ScanError,
+	ValidationError,
+} from "../common/errors.js";
+export type {
+	DiagnoseResult,
+	DiagnoseSummary,
+	MonorepoResult,
+	ProjectInfo,
+	RuleErrorInfo,
+	Score,
+	SubProjectResult,
+} from "../common/result.js";
+export type {
+	SchemaColumn,
+	SchemaEntity,
+	SchemaGraph,
+	SchemaRelation,
+	SerializedSchemaGraph,
+} from "../common/schema.js";
 export { updateModuleGraphForFile } from "../engine/module-graph.js";
-export { extractSchema } from "../engine/schema/extract.js";
-export { updateProvidersForFile } from "../engine/type-resolver.js";
-export { getRules } from "../rules/index.js";
+export { getRules } from "../engine/rules/index.js";
 export type {
 	AnyRule,
 	CodeRuleContext,
@@ -27,42 +59,27 @@ export type {
 	RuleMeta,
 	SchemaRule,
 	SchemaRuleContext,
-} from "../rules/types.js";
-export type { NestjsDoctorConfig } from "../types/config.js";
+} from "../engine/rules/types.js";
 export type {
-	BaseDiagnostic,
-	Category,
-	CodeDiagnostic,
-	Diagnostic,
-	SchemaDiagnostic,
-	Severity,
-} from "../types/diagnostic.js";
+	AutoScanResult,
+	RawScanOutput,
+	ScanConfig,
+	ScanContext,
+} from "../engine/scanner.js";
 export {
-	isCodeDiagnostic,
-	isSchemaDiagnostic,
-} from "../types/diagnostic.js";
-export {
-	ConfigurationError,
-	NestjsDoctorError,
-	ScanError,
-	ValidationError,
-} from "../types/errors.js";
-export type {
-	DiagnoseResult,
-	DiagnoseSummary,
-	MonorepoResult,
-	ProjectInfo,
-	RuleErrorInfo,
-	Score,
-	SubProjectResult,
-} from "../types/result.js";
-export type {
-	SchemaColumn,
-	SchemaEntity,
-	SchemaGraph,
-	SchemaRelation,
-	SerializedSchemaGraph,
-} from "../types/schema.js";
+	autoScan,
+	buildScanContext,
+	buildScanResult,
+	checkAllFiles,
+	checkFile,
+	checkProject,
+	checkSchema,
+	prepareScan,
+	resolveScanConfig,
+	updateFile,
+} from "../engine/scanner.js";
+export { extractSchema } from "../engine/schema/extract.js";
+export { updateProvidersForFile } from "../engine/type-resolver.js";
 
 function validatePath(path: string): string {
 	if (!path || path.trim() === "") {
@@ -100,7 +117,14 @@ export async function diagnose(
 	options: { config?: string } = {}
 ) {
 	const targetPath = validatePath(path);
-	const { result } = await scan(targetPath, options);
+	const scanConfig = await resolveScanConfig(targetPath, options.config);
+	const context = await buildScanContext(targetPath, scanConfig);
+	const rawOutput = runRules(context);
+	const { result } = buildScanResult(
+		context,
+		rawOutput,
+		scanConfig.customRuleWarnings
+	);
 	return result;
 }
 
@@ -120,6 +144,25 @@ export async function diagnoseMonorepo(
 	options: { config?: string } = {}
 ) {
 	const targetPath = validatePath(path);
-	const { result } = await scanMonorepo(targetPath, options);
+	const scanConfig = await resolveScanConfig(targetPath, options.config);
+	const monorepo = await detectMonorepo(targetPath);
+
+	if (!monorepo) {
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
+		return {
+			isMonorepo: false,
+			subProjects: [{ name: "default", result }],
+			combined: result,
+			elapsedMs: result.elapsedMs,
+		} satisfies MonorepoResult;
+	}
+
+	const { result } = await scanMonorepo(targetPath, scanConfig, monorepo);
 	return result;
 }

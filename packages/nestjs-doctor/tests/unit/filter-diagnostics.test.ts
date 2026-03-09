@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { filterIgnoredDiagnostics } from "../../src/core/filter-diagnostics.js";
-import type { NestjsDoctorConfig } from "../../src/types/config.js";
-import type { Diagnostic } from "../../src/types/diagnostic.js";
+import type { NestjsDoctorConfig } from "../../src/common/config.js";
+import type { Diagnostic } from "../../src/common/diagnostic.js";
+import { filterIgnoredDiagnostics } from "../../src/engine/filter-diagnostics.js";
 
 const TARGET_PATH = "/Users/test/project";
 

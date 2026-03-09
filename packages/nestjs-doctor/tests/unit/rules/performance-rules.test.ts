@@ -1,17 +1,17 @@
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+import type { NestjsDoctorConfig } from "../../../src/common/config.js";
+import type { Diagnostic } from "../../../src/common/diagnostic.js";
 import { buildModuleGraph } from "../../../src/engine/module-graph.js";
+import { noBlockingConstructor } from "../../../src/engine/rules/performance/no-blocking-constructor.js";
+import { noDynamicRequire } from "../../../src/engine/rules/performance/no-dynamic-require.js";
+import { noOrphanModules } from "../../../src/engine/rules/performance/no-orphan-modules.js";
+import { noRequestScopeAbuse } from "../../../src/engine/rules/performance/no-request-scope-abuse.js";
+import { noSyncIo } from "../../../src/engine/rules/performance/no-sync-io.js";
+import { noUnusedModuleExports } from "../../../src/engine/rules/performance/no-unused-module-exports.js";
+import { noUnusedProviders } from "../../../src/engine/rules/performance/no-unused-providers.js";
+import type { ProjectRule, Rule } from "../../../src/engine/rules/types.js";
 import { resolveProviders } from "../../../src/engine/type-resolver.js";
-import { noBlockingConstructor } from "../../../src/rules/performance/no-blocking-constructor.js";
-import { noDynamicRequire } from "../../../src/rules/performance/no-dynamic-require.js";
-import { noOrphanModules } from "../../../src/rules/performance/no-orphan-modules.js";
-import { noRequestScopeAbuse } from "../../../src/rules/performance/no-request-scope-abuse.js";
-import { noSyncIo } from "../../../src/rules/performance/no-sync-io.js";
-import { noUnusedModuleExports } from "../../../src/rules/performance/no-unused-module-exports.js";
-import { noUnusedProviders } from "../../../src/rules/performance/no-unused-providers.js";
-import type { ProjectRule, Rule } from "../../../src/rules/types.js";
-import type { NestjsDoctorConfig } from "../../../src/types/config.js";
-import type { Diagnostic } from "../../../src/types/diagnostic.js";
 
 function runRule(rule: Rule, code: string, filePath = "test.ts"): Diagnostic[] {
 	const project = new Project({ useInMemoryFileSystem: true });

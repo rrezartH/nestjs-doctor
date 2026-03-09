@@ -1,11 +1,11 @@
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
+import type { SchemaGraph } from "../../../src/common/schema.js";
 import {
 	extractSchema,
 	serializeSchemaGraph,
 	updateSchemaForFile,
 } from "../../../src/engine/schema/extract.js";
-import type { SchemaGraph } from "../../../src/types/schema.js";
 
 function createProject(files: Record<string, string>) {
 	const project = new Project({ useInMemoryFileSystem: true });

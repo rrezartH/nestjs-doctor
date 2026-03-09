@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { calculateScore } from "../../src/scorer/index.js";
-import type { Diagnostic } from "../../src/types/diagnostic.js";
+import type { Diagnostic } from "../../src/common/diagnostic.js";
+import { calculateScore } from "../../src/engine/scorer/index.js";
 
 function makeDiagnostic(overrides: Partial<Diagnostic> = {}): Diagnostic {
 	return {

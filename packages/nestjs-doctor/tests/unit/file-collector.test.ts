@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { collectFiles } from "../../src/core/file-collector.js";
-import { DEFAULT_CONFIG } from "../../src/types/config.js";
+import { DEFAULT_CONFIG } from "../../src/common/config.js";
+import { collectFiles } from "../../src/engine/file-collector.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 const TESTS_DIR_RE = /\/__tests__\//;

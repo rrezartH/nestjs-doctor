@@ -23,7 +23,7 @@ import type {
 	SchemaColumn,
 	SchemaEntity,
 	SchemaRelation,
-} from "../../types/schema.js";
+} from "../../common/schema.js";
 import type { OrmSchemaExtractor } from "./extract.js";
 
 const MODEL_REGEX = /^model\s+(\w+)\s*\{/;

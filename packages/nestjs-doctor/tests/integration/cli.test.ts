@@ -1,12 +1,28 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { scan, scanMonorepo } from "../../src/core/scanner.js";
+import { diagnoseMonorepo } from "../../src/api/index.js";
+import { detectMonorepo } from "../../src/engine/project-detector.js";
+import {
+	buildScanContext,
+	buildScanResult,
+	resolveScanConfig,
+	runRules,
+	scanMonorepo,
+} from "../../src/engine/scanner.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 
 describe("scanner integration", () => {
 	it("produces a clean result for basic-app", async () => {
-		const { result } = await scan(resolve(FIXTURES, "basic-app/src"));
+		const targetPath = resolve(FIXTURES, "basic-app/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		expect(result.score.value).toBeGreaterThanOrEqual(90);
 		expect(result.score.label).toBe("Excellent");
@@ -15,7 +31,15 @@ describe("scanner integration", () => {
 	});
 
 	it("detects violations in bad-practices fixture", async () => {
-		const { result } = await scan(resolve(FIXTURES, "bad-practices/src"));
+		const targetPath = resolve(FIXTURES, "bad-practices/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		expect(result.diagnostics.length).toBeGreaterThan(0);
 		expect(result.score.value).toBeLessThan(100);
@@ -40,7 +64,15 @@ describe("scanner integration", () => {
 	});
 
 	it("returns valid summary structure", async () => {
-		const { result } = await scan(resolve(FIXTURES, "bad-practices/src"));
+		const targetPath = resolve(FIXTURES, "bad-practices/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		expect(result.summary).toHaveProperty("total");
 		expect(result.summary).toHaveProperty("errors");
@@ -53,7 +85,15 @@ describe("scanner integration", () => {
 	});
 
 	it("summary counts match actual diagnostics array", async () => {
-		const { result } = await scan(resolve(FIXTURES, "bad-practices/src"));
+		const targetPath = resolve(FIXTURES, "bad-practices/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		expect(result.summary.total).toBe(result.diagnostics.length);
 
@@ -68,14 +108,30 @@ describe("scanner integration", () => {
 	});
 
 	it("returns valid project info", async () => {
-		const { result } = await scan(resolve(FIXTURES, "bad-practices/src"));
+		const targetPath = resolve(FIXTURES, "bad-practices/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		expect(result.project).toHaveProperty("fileCount");
 		expect(result.project.fileCount).toBeGreaterThan(0);
 	});
 
 	it("detects architecture violations in bad-architecture fixture", async () => {
-		const { result } = await scan(resolve(FIXTURES, "bad-architecture/src"));
+		const targetPath = resolve(FIXTURES, "bad-architecture/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		expect(result.diagnostics.length).toBeGreaterThan(0);
 
@@ -105,14 +161,26 @@ describe("scanner integration", () => {
 	});
 
 	it("counts modules correctly via module graph", async () => {
-		const { result } = await scan(resolve(FIXTURES, "bad-architecture/src"));
+		const targetPath = resolve(FIXTURES, "bad-architecture/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildScanContext(targetPath, scanConfig);
+		const rawOutput = runRules(context);
+		const { result } = buildScanResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
 
 		// Should detect 3 modules: AppModule, UsersModule, OrdersModule
 		expect(result.project.moduleCount).toBe(3);
 	});
 
 	it("scans monorepo with multiple sub-projects", async () => {
-		const { result } = await scanMonorepo(resolve(FIXTURES, "monorepo-app"));
+		const targetPath = resolve(FIXTURES, "monorepo-app");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const monorepo = await detectMonorepo(targetPath);
+		expect(monorepo).not.toBeNull();
+		const { result } = await scanMonorepo(targetPath, scanConfig, monorepo!);
 
 		expect(result.isMonorepo).toBe(true);
 		expect(result.subProjects.length).toBe(2);
@@ -134,8 +202,9 @@ describe("scanner integration", () => {
 		);
 	});
 
-	it("falls back to single scan for non-monorepo", async () => {
-		const { result } = await scanMonorepo(resolve(FIXTURES, "basic-app/src"));
+	it("diagnoseMonorepo falls back to single scan for non-monorepo", async () => {
+		const targetPath = resolve(FIXTURES, "basic-app/src");
+		const result = await diagnoseMonorepo(targetPath);
 
 		expect(result.isMonorepo).toBe(false);
 		expect(result.subProjects.length).toBe(1);
