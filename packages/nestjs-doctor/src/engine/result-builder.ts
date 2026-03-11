@@ -146,7 +146,7 @@ export function buildMonorepoResult(
 		project: {
 			name: "monorepo",
 			nestVersion: subProjects[0]?.result.project.nestVersion ?? null,
-			orm: subProjects[0]?.result.project.orm ?? null,
+			orm: detectedOrm || (subProjects[0]?.result.project.orm ?? null),
 			framework: subProjects[0]?.result.project.framework ?? null,
 			fileCount: totalFiles,
 			moduleCount: subProjects.reduce(

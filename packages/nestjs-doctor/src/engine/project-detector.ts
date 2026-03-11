@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { glob } from "tinyglobby";
 import type { ProjectInfo } from "../common/result.js";
 
@@ -34,8 +34,6 @@ const PACKAGES_INLINE_RE = /^packages\s*:\s*\[(.+)\]/;
 const TOP_LEVEL_KEY_RE = /^\S/;
 const LIST_ITEM_RE = /^-\s+['"]?([^'"]+)['"]?\s*$/;
 const QUOTE_STRIP_RE = /^['"]|['"]$/g;
-const LEADING_SLASH_RE = /^\//;
-
 export function parseWorkspacePatterns(content: string): string[] {
 	const patterns: string[] = [];
 	const lines = content.split("\n");
@@ -115,7 +113,7 @@ function hasNestDependency(pkg: PackageJson): boolean {
 	return Boolean(allDeps["@nestjs/core"] || allDeps["@nestjs/common"]);
 }
 
-async function detectWorkspaceMonorepo(
+async function detectPnpmWorkspaceMonorepo(
 	targetPath: string
 ): Promise<MonorepoInfo | null> {
 	const workspacePath = join(targetPath, "pnpm-workspace.yaml");
@@ -147,9 +145,7 @@ async function detectWorkspaceMonorepo(
 
 			if (hasNestDependency(pkg)) {
 				const projectDir = dirname(pkgPath);
-				const relativePath = projectDir
-					.slice(targetPath.length)
-					.replace(LEADING_SLASH_RE, "");
+				const relativePath = relative(targetPath, projectDir);
 				const name = pkg.name ?? relativePath;
 				projects.set(name, relativePath);
 			}
@@ -175,7 +171,7 @@ export async function detectMonorepo(
 	}
 
 	// 2. Try pnpm-workspace.yaml (Turborepo / pnpm workspace support)
-	return detectWorkspaceMonorepo(targetPath);
+	return detectPnpmWorkspaceMonorepo(targetPath);
 }
 
 export async function detectProject(targetPath: string): Promise<ProjectInfo> {
