@@ -1,5 +1,11 @@
 # nestjs-doctor
 
+## 0.4.23
+
+### Patch Changes
+
+- 0232a8b: Pass path aliases as function parameters instead of module-level state
+
 ## 0.4.22
 
 ### Patch Changes
