@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { spinner } from "../cli/ui/spinner.js";
 import { mergeModuleGraphs } from "../engine/graph/module-graph.js";
+import type { ProviderInfo } from "../engine/graph/type-resolver.js";
 import type { MonorepoInfo } from "../engine/project-detector.js";
 import {
 	type AnalysisContext,
@@ -171,7 +172,21 @@ export class MonorepoReportPipeline extends ReportPipeline {
 			const { moduleGraphs, result } = this._monoResult;
 			const merged = mergeModuleGraphs(moduleGraphs);
 			const projects = [...moduleGraphs.keys()];
-			this._html = buildHtmlReport(merged, result.combined, { projects });
+
+			const allFiles: string[] = [];
+			const allProviders = new Map<string, ProviderInfo>();
+			for (const context of this.monorepoCtx.subProjects.values()) {
+				allFiles.push(...context.files);
+				for (const [name, info] of context.providers) {
+					allProviders.set(name, info);
+				}
+			}
+
+			this._html = buildHtmlReport(merged, result.combined, {
+				projects,
+				files: allFiles,
+				providers: allProviders,
+			});
 		});
 		return this;
 	}

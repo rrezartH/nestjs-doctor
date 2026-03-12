@@ -1,4 +1,5 @@
 import type { Diagnostic } from "../common/diagnostic.js";
+import type { EndpointNode } from "../common/endpoint.js";
 import type {
 	DiagnoseResult,
 	DiagnoseSummary,
@@ -82,6 +83,7 @@ export function buildResult(
 	const result: DiagnoseResult = {
 		score,
 		diagnostics,
+		endpoints: context.endpointGraph,
 		project: {
 			...context.project,
 			fileCount: context.files.length,
@@ -112,6 +114,7 @@ export function buildMonorepoResult(
 	const allDiagnostics: Diagnostic[] = [];
 	const allRuleErrors: RuleErrorInfo[] = [];
 	const moduleGraphs = new Map<string, ModuleGraph>();
+	const allEndpoints: EndpointNode[] = [];
 	let totalFiles = 0;
 	const allSchemaEntities: SerializedSchemaEntity[] = [];
 	const allSchemaRelations: SchemaRelation[] = [];
@@ -125,6 +128,9 @@ export function buildMonorepoResult(
 		allDiagnostics.push(...scanResult.result.diagnostics);
 		allRuleErrors.push(...scanResult.result.ruleErrors);
 		totalFiles += scanResult.result.project.fileCount;
+		if (scanResult.result.endpoints) {
+			allEndpoints.push(...scanResult.result.endpoints.endpoints);
+		}
 		if (scanResult.result.schema) {
 			allSchemaEntities.push(...scanResult.result.schema.entities);
 			allSchemaRelations.push(...scanResult.result.schema.relations);
@@ -143,6 +149,8 @@ export function buildMonorepoResult(
 	const combined: DiagnoseResult = {
 		score: combinedScore,
 		diagnostics: allDiagnostics,
+		endpoints:
+			allEndpoints.length > 0 ? { endpoints: allEndpoints } : undefined,
 		project: {
 			name: "monorepo",
 			nestVersion: subProjects[0]?.result.project.nestVersion ?? null,

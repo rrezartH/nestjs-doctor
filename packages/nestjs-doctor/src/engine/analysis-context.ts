@@ -1,12 +1,17 @@
 import { join } from "node:path";
 import type { Project } from "ts-morph";
 import type { NestjsDoctorConfig } from "../common/config.js";
+import type { EndpointGraph } from "../common/endpoint.js";
 import type { ProjectInfo } from "../common/result.js";
 import type { SchemaGraph } from "../common/schema.js";
 import { loadConfigWithFallback } from "./config/loader.js";
 import { resolveScanConfig, type ScanConfig } from "./config/scan-config.js";
 import { collectFiles, collectMonorepoFiles } from "./file-collector.js";
 import { createAstParser } from "./graph/ast-parser.js";
+import {
+	buildEndpointGraph,
+	updateEndpointGraphForFile,
+} from "./graph/endpoint-graph.js";
 import {
 	buildModuleGraph,
 	type ModuleGraph,
@@ -26,6 +31,7 @@ import { extractSchema, updateSchemaForFile } from "./schema/extract.js";
 export interface AnalysisContext {
 	astProject: Project;
 	config: NestjsDoctorConfig;
+	endpointGraph: EndpointGraph;
 	fileRules: Rule[];
 	files: string[];
 	moduleGraph: ModuleGraph;
@@ -55,11 +61,13 @@ export async function buildAnalysisContext(
 	const pathAliases = loadPathAliases(targetPath);
 	const moduleGraph = buildModuleGraph(astProject, files, pathAliases);
 	const providers = resolveProviders(astProject, files);
+	const endpointGraph = buildEndpointGraph(astProject, files, providers);
 	const schemaGraph = extractSchema(astProject, files, project.orm, targetPath);
 
 	return {
 		astProject,
 		config,
+		endpointGraph,
 		fileRules,
 		files,
 		moduleGraph,
@@ -101,6 +109,12 @@ export function updateFile(context: AnalysisContext, filePath: string): void {
 		context.pathAliases
 	);
 	updateProvidersForFile(context.providers, context.astProject, filePath);
+	updateEndpointGraphForFile(
+		context.endpointGraph,
+		context.astProject,
+		filePath,
+		context.providers
+	);
 	if (context.schemaGraph) {
 		updateSchemaForFile(
 			context.schemaGraph,
@@ -137,6 +151,7 @@ export async function buildMonorepoContext(
 				const pathAliases = loadPathAliases(projectPath);
 				const moduleGraph = buildModuleGraph(astProject, files, pathAliases);
 				const providers = resolveProviders(astProject, files);
+				const endpointGraph = buildEndpointGraph(astProject, files, providers);
 				const schemaGraph = extractSchema(
 					astProject,
 					files,
@@ -151,6 +166,7 @@ export async function buildMonorepoContext(
 					{
 						astProject,
 						config: projectConfig,
+						endpointGraph,
 						fileRules,
 						files,
 						moduleGraph,

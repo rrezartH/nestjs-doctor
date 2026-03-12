@@ -97,7 +97,7 @@ export function updateProvidersForFile(
 	}
 }
 
-function extractSimpleTypeName(typeText: string): string {
+export function extractSimpleTypeName(typeText: string): string {
 	// Handle import("...").ClassName
 	const importMatch = typeText.match(IMPORT_TYPE_REGEX);
 	if (importMatch) {
