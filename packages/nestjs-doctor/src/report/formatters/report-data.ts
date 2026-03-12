@@ -86,6 +86,9 @@ export function prepareReportData(
 	const schemaJson = safeJsonForScript(
 		JSON.stringify(result.schema ?? { entities: [], relations: [], orm: "" })
 	);
+	const endpointsJson = safeJsonForScript(
+		JSON.stringify(result.endpoints ?? { endpoints: [] })
+	);
 
 	return {
 		graphJson,
@@ -98,5 +101,6 @@ export function prepareReportData(
 		fileSourcesJson,
 		providersJson,
 		schemaJson,
+		endpointsJson,
 	};
 }

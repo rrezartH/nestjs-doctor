@@ -1,4 +1,5 @@
 import type { Category, Diagnostic } from "./diagnostic.js";
+import type { EndpointGraph } from "./endpoint.js";
 import type { SerializedSchemaGraph } from "./schema.js";
 
 export interface Score {
@@ -31,6 +32,7 @@ export interface RuleErrorInfo {
 export interface DiagnoseResult {
 	diagnostics: Diagnostic[];
 	elapsedMs: number;
+	endpoints?: EndpointGraph;
 	project: ProjectInfo;
 	ruleErrors: RuleErrorInfo[];
 	schema?: SerializedSchemaGraph;

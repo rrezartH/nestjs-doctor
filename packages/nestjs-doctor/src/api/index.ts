@@ -25,6 +25,13 @@ export {
 	isCodeDiagnostic,
 	isSchemaDiagnostic,
 } from "../common/diagnostic.js";
+export type {
+	DependencyType,
+	EndpointGraph,
+	EndpointNode,
+	MethodCallNode,
+	MethodDependencyNode,
+} from "../common/endpoint.js";
 export {
 	ConfigurationError,
 	NestjsDoctorError,
@@ -47,6 +54,11 @@ export type {
 	SchemaRelation,
 	SerializedSchemaGraph,
 } from "../common/schema.js";
+export {
+	buildEndpointGraph,
+	traceEndpointCalls,
+	updateEndpointGraphForFile,
+} from "../engine/graph/endpoint-graph.js";
 export { updateModuleGraphForFile } from "../engine/graph/module-graph.js";
 export { updateProvidersForFile } from "../engine/graph/type-resolver.js";
 export { getRules } from "../engine/rules/index.js";
