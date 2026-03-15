@@ -4,7 +4,10 @@ import type { NestjsDoctorConfig } from "../../../src/common/config.js";
 import type { Diagnostic } from "../../../src/common/diagnostic.js";
 import { buildModuleGraph } from "../../../src/engine/graph/module-graph.js";
 import { resolveProviders } from "../../../src/engine/graph/type-resolver.js";
+import { factoryInjectMatchesParams } from "../../../src/engine/rules/definitions/correctness/factory-inject-matches-params.js";
+import { injectableMustBeProvided } from "../../../src/engine/rules/definitions/correctness/injectable-must-be-provided.js";
 import { noAsyncWithoutAwait } from "../../../src/engine/rules/definitions/correctness/no-async-without-await.js";
+import { noDuplicateDecorators } from "../../../src/engine/rules/definitions/correctness/no-duplicate-decorators.js";
 import { noDuplicateModuleMetadata } from "../../../src/engine/rules/definitions/correctness/no-duplicate-module-metadata.js";
 import { noDuplicateRoutes } from "../../../src/engine/rules/definitions/correctness/no-duplicate-routes.js";
 import { noEmptyHandlers } from "../../../src/engine/rules/definitions/correctness/no-empty-handlers.js";
@@ -15,8 +18,11 @@ import { noMissingInjectable } from "../../../src/engine/rules/definitions/corre
 import { noMissingInterceptorMethod } from "../../../src/engine/rules/definitions/correctness/no-missing-interceptor-method.js";
 import { noMissingModuleDecorator } from "../../../src/engine/rules/definitions/correctness/no-missing-module-decorator.js";
 import { noMissingPipeMethod } from "../../../src/engine/rules/definitions/correctness/no-missing-pipe-method.js";
+import { paramDecoratorMatchesRoute } from "../../../src/engine/rules/definitions/correctness/param-decorator-matches-route.js";
 import { requireInjectDecorator } from "../../../src/engine/rules/definitions/correctness/require-inject-decorator.js";
 import { requireLifecycleInterface } from "../../../src/engine/rules/definitions/correctness/require-lifecycle-interface.js";
+import { validateNestedArrayEach } from "../../../src/engine/rules/definitions/correctness/validate-nested-array-each.js";
+import { validatedNonPrimitiveNeedsType } from "../../../src/engine/rules/definitions/correctness/validated-non-primitive-needs-type.js";
 import type { ProjectRule, Rule } from "../../../src/engine/rules/types.js";
 
 function runRule(
@@ -137,6 +143,21 @@ describe("require-lifecycle-interface", () => {
 		);
 		expect(diags).toHaveLength(1);
 		expect(diags[0].message).toContain("OnModuleDestroy");
+	});
+
+	it("does not match interface names that only contain the lifecycle name as a substring", () => {
+		const diags = runRule(
+			requireLifecycleInterface,
+			`
+      interface NotOnModuleInit { init(): void; }
+      export class MyService implements NotOnModuleInit {
+        onModuleInit() {}
+        init() {}
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("OnModuleInit");
 	});
 });
 
@@ -1023,5 +1044,707 @@ describe("no-fire-and-forget-async", () => {
 			{ useRealFs: true }
 		);
 		expect(diags).toHaveLength(0);
+	});
+});
+
+describe("param-decorator-matches-route", () => {
+	it("flags @Param name not in route path", () => {
+		const diags = runRule(
+			paramDecoratorMatchesRoute,
+			`
+      import { Controller, Get, Param } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get(':id')
+        findOne(@Param('userId') userId: string) { return {}; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("userId");
+	});
+
+	it("allows @Param name matching route param", () => {
+		const diags = runRule(
+			paramDecoratorMatchesRoute,
+			`
+      import { Controller, Get, Param } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get(':id')
+        findOne(@Param('id') id: string) { return {}; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows @Param() without arguments", () => {
+		const diags = runRule(
+			paramDecoratorMatchesRoute,
+			`
+      import { Controller, Get, Param } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get(':id')
+        findOne(@Param() params: any) { return {}; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("checks controller-level route params", () => {
+		const diags = runRule(
+			paramDecoratorMatchesRoute,
+			`
+      import { Controller, Get, Param } from '@nestjs/common';
+      @Controller('users/:userId')
+      export class UsersController {
+        @Get('posts')
+        getPosts(@Param('userId') userId: string) { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("flags param not in controller or method route", () => {
+		const diags = runRule(
+			paramDecoratorMatchesRoute,
+			`
+      import { Controller, Get, Param } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get('posts')
+        getPosts(@Param('id') id: string) { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+	});
+
+	it("does not extract false params from non-path properties in @Controller object", () => {
+		const diags = runRule(
+			paramDecoratorMatchesRoute,
+			`
+      import { Controller, Get, Param } from '@nestjs/common';
+      @Controller({ path: 'users', host: ':subdomain.example.com' })
+      export class UsersController {
+        @Get(':id')
+        findOne(@Param('subdomain') sub: string) { return {}; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(1); // Should flag — subdomain is in host, not path
+	});
+});
+
+describe("factory-inject-matches-params", () => {
+	it("flags inject/factory parameter count mismatch", () => {
+		const diags = runRule(
+			factoryInjectMatchesParams,
+			`
+      import { Module } from '@nestjs/common';
+      @Module({
+        providers: [
+          {
+            provide: 'TOKEN',
+            useFactory: (configService) => configService.get('key'),
+            inject: [ConfigService, LoggerService],
+          },
+        ],
+      })
+      export class AppModule {}
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("1 parameter(s)");
+		expect(diags[0].message).toContain("2 element(s)");
+	});
+
+	it("allows matching inject/factory parameter count", () => {
+		const diags = runRule(
+			factoryInjectMatchesParams,
+			`
+      import { Module } from '@nestjs/common';
+      @Module({
+        providers: [
+          {
+            provide: 'TOKEN',
+            useFactory: (config, logger) => config.get('key'),
+            inject: [ConfigService, LoggerService],
+          },
+        ],
+      })
+      export class AppModule {}
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("handles function expression factories", () => {
+		const diags = runRule(
+			factoryInjectMatchesParams,
+			`
+      import { Module } from '@nestjs/common';
+      @Module({
+        providers: [
+          {
+            provide: 'TOKEN',
+            useFactory: function(a, b, c) { return a; },
+            inject: [A, B],
+          },
+        ],
+      })
+      export class AppModule {}
+    `
+		);
+		expect(diags).toHaveLength(1);
+	});
+
+	it("handles method shorthand factories", () => {
+		const diags = runRule(
+			factoryInjectMatchesParams,
+			`
+      import { Module } from '@nestjs/common';
+      @Module({
+        providers: [
+          {
+            provide: 'TOKEN',
+            useFactory(a, b, c) { return a; },
+            inject: [A, B],
+          },
+        ],
+      })
+      export class AppModule {}
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("3 parameter(s)");
+		expect(diags[0].message).toContain("2 element(s)");
+	});
+
+	it("allows matching method shorthand factories", () => {
+		const diags = runRule(
+			factoryInjectMatchesParams,
+			`
+      import { Module } from '@nestjs/common';
+      @Module({
+        providers: [
+          {
+            provide: 'TOKEN',
+            useFactory(a, b) { return a; },
+            inject: [A, B],
+          },
+        ],
+      })
+      export class AppModule {}
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+});
+
+describe("validated-non-primitive-needs-type", () => {
+	it("flags non-primitive property with validator but no @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { ValidateNested } from 'class-validator';
+      class AddressDto { street: string; }
+      class CreateUserDto {
+        @ValidateNested()
+        address: AddressDto;
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("address");
+		expect(diags[0].message).toContain("AddressDto");
+	});
+
+	it("allows non-primitive property with @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { ValidateNested } from 'class-validator';
+      import { Type } from 'class-transformer';
+      class AddressDto { street: string; }
+      class CreateUserDto {
+        @ValidateNested()
+        @Type(() => AddressDto)
+        address: AddressDto;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows primitive properties without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsString, IsNumber } from 'class-validator';
+      class CreateUserDto {
+        @IsString()
+        name: string;
+        @IsNumber()
+        age: number;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("skips properties without type annotation", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsNotEmpty } from 'class-validator';
+      class CreateUserDto {
+        @IsNotEmpty()
+        name;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows Date type without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsDate } from 'class-validator';
+      class CreateEventDto {
+        @IsDate()
+        startDate: Date;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows nullable primitive union types without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsString, IsOptional } from 'class-validator';
+      class UpdateUserDto {
+        @IsString()
+        @IsOptional()
+        name: string | null;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows undefined primitive union types without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsNumber, IsOptional } from 'class-validator';
+      class UpdateUserDto {
+        @IsNumber()
+        @IsOptional()
+        age: number | undefined;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("flags non-primitive union types without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { ValidateNested } from 'class-validator';
+      class AddressDto { street: string; }
+      class CreateUserDto {
+        @ValidateNested()
+        address: AddressDto | undefined;
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("address");
+	});
+
+	it("allows string[][] without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsArray } from 'class-validator';
+      class MatrixDto {
+        @IsArray()
+        grid: string[][];
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows Array<Array<number>> without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsArray } from 'class-validator';
+      class MatrixDto {
+        @IsArray()
+        grid: Array<Array<number>>;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows enum property with @IsEnum() without @Type()", () => {
+		const diags = runRule(
+			validatedNonPrimitiveNeedsType,
+			`
+      import { IsEnum } from 'class-validator';
+      enum Status { Active = 'active', Inactive = 'inactive' }
+      class UpdateDto {
+        @IsEnum(Status)
+        status: Status;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+});
+
+describe("no-duplicate-decorators", () => {
+	it("flags duplicate decorator on a method", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      import { Controller, Get } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get()
+        @Get()
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("@Get()");
+	});
+
+	it("allows different decorators on same method", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      import { Controller, Get, UseGuards } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get()
+        @UseGuards(AuthGuard)
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows stackable decorators like @ApiResponse", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      import { Controller, Get } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get()
+        @ApiResponse({ status: 200 })
+        @ApiResponse({ status: 404 })
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("flags duplicate decorator on a class", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      @Controller('users')
+      @Controller('admin')
+      export class UsersController {}
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("@Controller()");
+	});
+
+	it("flags duplicate decorator on a property", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      class CreateUserDto {
+        @IsString()
+        @IsString()
+        name: string;
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+	});
+
+	it("flags duplicate decorator on a constructor parameter", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      import { Injectable, Inject } from '@nestjs/common';
+      @Injectable()
+      export class MyService {
+        constructor(
+          @Inject('TOKEN') @Inject('TOKEN') private dep: any
+        ) {}
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("@Inject()");
+	});
+
+	it("allows stackable @Throttle() decorators", () => {
+		const diags = runRule(
+			noDuplicateDecorators,
+			`
+      import { Controller, Get } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Throttle({ default: { limit: 3, ttl: 60 } })
+        @Throttle({ short: { limit: 1, ttl: 10 } })
+        @Get()
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+});
+
+describe("validate-nested-array-each", () => {
+	it("flags @ValidateNested() on array without { each: true }", () => {
+		const diags = runRule(
+			validateNestedArrayEach,
+			`
+      import { ValidateNested } from 'class-validator';
+      class ItemDto { name: string; }
+      class OrderDto {
+        @ValidateNested()
+        items: ItemDto[];
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("items");
+	});
+
+	it("allows @ValidateNested({ each: true }) on array", () => {
+		const diags = runRule(
+			validateNestedArrayEach,
+			`
+      import { ValidateNested } from 'class-validator';
+      class ItemDto { name: string; }
+      class OrderDto {
+        @ValidateNested({ each: true })
+        items: ItemDto[];
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows @ValidateNested() on non-array type", () => {
+		const diags = runRule(
+			validateNestedArrayEach,
+			`
+      import { ValidateNested } from 'class-validator';
+      class AddressDto { street: string; }
+      class UserDto {
+        @ValidateNested()
+        address: AddressDto;
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("detects array type via @IsArray decorator", () => {
+		const diags = runRule(
+			validateNestedArrayEach,
+			`
+      import { ValidateNested, IsArray } from 'class-validator';
+      class ItemDto { name: string; }
+      class OrderDto {
+        @IsArray()
+        @ValidateNested()
+        items: ItemDto;
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+	});
+
+	it("detects Array<T> generic syntax", () => {
+		const diags = runRule(
+			validateNestedArrayEach,
+			`
+      import { ValidateNested } from 'class-validator';
+      class ItemDto { name: string; }
+      class OrderDto {
+        @ValidateNested()
+        items: Array<ItemDto>;
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+	});
+});
+
+describe("injectable-must-be-provided", () => {
+	it("flags @Injectable() class not in any module providers", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [OtherService] })
+        export class AppModule {}
+      `,
+			"my.service.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class MyService {}
+      `,
+		});
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("MyService");
+	});
+
+	it("allows @Injectable() class registered in module providers", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [MyService] })
+        export class AppModule {}
+      `,
+			"my.service.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class MyService {}
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("skips classes with Guard/Interceptor/Pipe/Filter suffixes", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [] })
+        export class AppModule {}
+      `,
+			"auth.guard.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class AuthGuard {}
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("skips test files", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [] })
+        export class AppModule {}
+      `,
+			"my.service.spec.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class MockService {}
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows @Injectable() class registered via useClass in a custom provider", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({
+          providers: [
+            { provide: 'MY_SERVICE', useClass: MyService },
+          ],
+        })
+        export class AppModule {}
+      `,
+			"my.service.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class MyService {}
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows @Injectable() class registered via useExisting in a custom provider", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({
+          providers: [
+            MyService,
+            { provide: 'ALIAS', useExisting: MyService },
+          ],
+        })
+        export class AppModule {}
+      `,
+			"my.service.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class MyService {}
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("flags @Injectable() service with generic 'Task' suffix not registered in any module", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [] })
+        export class AppModule {}
+      `,
+			"background-task.service.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class BackgroundTask {}
+      `,
+		});
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("BackgroundTask");
+	});
+
+	it("flags @Injectable() service with generic 'Indicator' suffix not registered in any module", () => {
+		const diags = runProjectRule(injectableMustBeProvided, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [] })
+        export class AppModule {}
+      `,
+			"performance-indicator.service.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class PerformanceIndicator {}
+      `,
+		});
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("PerformanceIndicator");
 	});
 });

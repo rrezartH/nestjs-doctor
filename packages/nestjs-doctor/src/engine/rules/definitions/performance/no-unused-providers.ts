@@ -1,12 +1,44 @@
+import type { ClassDeclaration } from "ts-morph";
+import { INFRA_SUFFIXES } from "../../constants.js";
 import type { ProjectRule } from "../../types.js";
 
-const SKIP_SUFFIXES = [
-	"Guard",
-	"Interceptor",
-	"Filter",
-	"Middleware",
-	"Strategy",
-];
+const SELF_ACTIVATING_DECORATORS = new Set([
+	// @nestjs/schedule
+	"Cron",
+	"Interval",
+	"Timeout",
+	// @nestjs/event-emitter
+	"OnEvent",
+	// @nestjs/bull / @nestjs/bullmq
+	"Process",
+	"OnQueueEvent",
+	// TypeORM subscriber (class decorator)
+	"EventSubscriber",
+	// @nestjs/websockets
+	"SubscribeMessage",
+	// @nestjs/websockets gateway (class decorator)
+	"WebSocketGateway",
+]);
+
+function hasSelfActivatingDecorator(cls: ClassDeclaration): boolean {
+	// Check class-level decorators
+	for (const decorator of cls.getDecorators()) {
+		if (SELF_ACTIVATING_DECORATORS.has(decorator.getName())) {
+			return true;
+		}
+	}
+
+	// Check method-level decorators
+	for (const method of cls.getMethods()) {
+		for (const decorator of method.getDecorators()) {
+			if (SELF_ACTIVATING_DECORATORS.has(decorator.getName())) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
 
 export const noUnusedProviders: ProjectRule = {
 	meta: {
@@ -14,8 +46,8 @@ export const noUnusedProviders: ProjectRule = {
 		category: "performance",
 		severity: "warning",
 		description:
-			"Injectable providers that are never injected by any other provider may be dead code",
-		help: "Remove the unused provider or inject it where needed.",
+			"Injectable providers that are never injected and have no self-activating decorators may be dead code",
+		help: "Remove the unused provider, inject it where needed, or verify it is activated by a framework decorator (e.g. @Cron, @OnEvent).",
 		scope: "project",
 	},
 
@@ -64,12 +96,17 @@ export const noUnusedProviders: ProjectRule = {
 			const name = provider.name;
 
 			// Skip common infrastructure patterns
-			if (SKIP_SUFFIXES.some((suffix) => name.endsWith(suffix))) {
+			if (INFRA_SUFFIXES.some((suffix) => name.endsWith(suffix))) {
 				continue;
 			}
 
 			// Skip if it's used as a dependency somewhere
 			if (allDependencies.has(name)) {
+				continue;
+			}
+
+			// Skip self-activating providers (e.g. @Cron, @OnEvent, @Process)
+			if (hasSelfActivatingDecorator(provider.classDeclaration)) {
 				continue;
 			}
 

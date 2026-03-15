@@ -13,7 +13,7 @@ export const noRawEntityInResponse: Rule = {
 		severity: "warning",
 		description:
 			"Returning ORM entities directly from controllers can leak internal fields like passwords or IDs",
-		help: "Map entities to DTOs or use class-transformer's @Exclude()/@Expose() decorators before returning. This rule detects classes with Entity/Model suffix in return types.",
+		help: "Map entities to DTOs or use class-transformer's @Exclude()/@Expose() decorators before returning.",
 	},
 
 	check(context) {

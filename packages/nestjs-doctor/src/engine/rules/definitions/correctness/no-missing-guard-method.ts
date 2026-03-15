@@ -7,7 +7,7 @@ export const noMissingGuardMethod: Rule = {
 		category: "correctness",
 		severity: "error",
 		description: "Guard classes must implement the canActivate() method",
-		help: "Add a canActivate(context: ExecutionContext) method to the guard class.",
+		help: "Add a canActivate(context: ExecutionContext) method to the guard class. Note: This rule identifies guards by the 'Guard' class name suffix.",
 	},
 
 	check(context) {

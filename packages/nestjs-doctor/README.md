@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  43 built-in rules across <b>security</b>, <b>performance</b>, <b>correctness</b>, <b>architecture</b>, and <b>schema</b>. Outputs a <b>0-100 score</b> with actionable diagnostics. Zero config. Monorepo support. Catches the anti-patterns that AI-generated code introduce (slop code).
+  50 built-in rules across <b>security</b>, <b>performance</b>, <b>correctness</b>, <b>architecture</b>, and <b>schema</b>. Outputs a <b>0-100 score</b> with actionable diagnostics. Zero config. Monorepo support. Catches the anti-patterns that AI-generated code introduce (slop code).
 </p>
 
 ---
@@ -60,7 +60,7 @@ Install [NestJS Doctor](https://marketplace.visualstudio.com/items?itemName=rolo
 npm install -D nestjs-doctor
 ```
 
-Same 43 rules as the CLI, surfaced as inline diagnostics in the editor and in the Problems panel. Files are scanned on open and on save with a configurable debounce.
+Same 50 rules as the CLI, surfaced as inline diagnostics in the editor and in the Problems panel. Files are scanned on open and on save with a configurable debounce.
 
 Use `NestJS Doctor: Scan Project` from the command palette to trigger a full scan manually.
 
@@ -370,9 +370,9 @@ mono.combined;      // Merged DiagnoseResult
 
 ---
 
-## Rules (43)
+## Rules (50)
 
-### Security (9)
+### Security (10)
 
 | Rule | Severity | What it catches |
 |------|----------|-----------------|
@@ -385,8 +385,9 @@ mono.combined;      // Merged DiagnoseResult
 | `no-exposed-env-vars` | warning | Direct `process.env` in Injectable/Controller |
 | `no-exposed-stack-trace` | warning | `error.stack` exposed in responses |
 | `no-raw-entity-in-response` | warning | Returning ORM entities directly from controllers -- leaks internal fields |
+| `require-guards-on-endpoints` | warning | Endpoints without `@UseGuards()` at class or method level |
 
-### Correctness (14)
+### Correctness (20)
 
 | Rule | Severity | What it catches |
 |------|----------|-----------------|
@@ -399,11 +400,17 @@ mono.combined;      // Merged DiagnoseResult
 | `require-inject-decorator` | error | Untyped constructor param without `@Inject()` |
 | `prefer-readonly-injection` | warning | Constructor DI params missing `readonly` |
 | `require-lifecycle-interface` | warning | Lifecycle method without corresponding interface |
-| `no-empty-handlers` | warning | HTTP handler with empty body |
+| `no-empty-handlers` | info | HTTP handler with empty body |
 | `no-async-without-await` | warning | Async function/method with no `await` |
 | `no-duplicate-module-metadata` | warning | Duplicate entries in `@Module()` arrays |
 | `no-missing-module-decorator` | warning | Class named `*Module` without `@Module()` |
 | `no-fire-and-forget-async` | warning | Async call without `await` in non-handler methods |
+| `param-decorator-matches-route` | error | `@Param()` name doesn't match any `:param` in the route path |
+| `factory-inject-matches-params` | error | `useFactory` inject array length mismatches factory parameter count |
+| `no-duplicate-decorators` | warning | Same decorator appears twice on a single target |
+| `validated-non-primitive-needs-type` | warning | Non-primitive DTO property with class-validator decorators missing `@Type()` |
+| `validate-nested-array-each` | warning | `@ValidateNested()` on array property missing `{ each: true }` |
+| `injectable-must-be-provided` | info | `@Injectable()` class not registered in any module's providers |
 
 ### Architecture (10)
 
@@ -414,7 +421,7 @@ mono.combined;      // Merged DiagnoseResult
 | `no-orm-in-controllers` | error | PrismaService / EntityManager / DataSource in controllers |
 | `no-circular-module-deps` | error | Cycles in `@Module()` import graph |
 | `no-manual-instantiation` | error | `new SomeService()` for injectable classes |
-| `no-orm-in-services` | warning | Services using ORM directly (should use repositories) |
+| `no-orm-in-services` | info | Services using ORM directly (should use repositories) |
 | `no-service-locator` | warning | `ModuleRef.get()`/`resolve()` hides dependencies |
 | `prefer-constructor-injection` | warning | `@Inject()` property injection |
 | `require-module-boundaries` | info | Deep imports into other modules' internals |
@@ -425,9 +432,9 @@ mono.combined;      // Merged DiagnoseResult
 | Rule | Severity | What it catches |
 |------|----------|-----------------|
 | `no-sync-io` | warning | `readFileSync`, `writeFileSync`, etc. |
-| `no-blocking-constructor` | warning | Loops/await in Injectable/Controller constructors |
+| `no-blocking-constructor` | warning | Loops in Injectable/Controller constructors |
 | `no-dynamic-require` | warning | `require()` with non-literal argument |
-| `no-unused-providers` | warning | Provider never injected anywhere |
+| `no-unused-providers` | warning | Provider never injected and no self-activating decorators |
 | `no-request-scope-abuse` | warning | `Scope.REQUEST` creates new instance per request |
 | `no-unused-module-exports` | info | Module exports unused by importers |
 | `no-orphan-modules` | info | Module never imported by any other module |
