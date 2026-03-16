@@ -115,6 +115,23 @@ export class UserController {
   }
 }`,
 		},
+		"security/require-guards-on-endpoints": {
+			bad: `@Controller('orders')
+export class OrderController {
+  @Get()
+  findAll() {
+    return this.orderService.findAll(); // No guard, no @Public()
+  }
+}`,
+			good: `@UseGuards(AuthGuard)
+@Controller('orders')
+export class OrderController {
+  @Get()
+  findAll() {
+    return this.orderService.findAll();
+  }
+}`,
+		},
 
 		// ── Correctness ──
 		"correctness/no-missing-injectable": {
@@ -303,6 +320,90 @@ export class OrderService {
     await this.notificationService.sendEmail(orderId);
     await this.analyticsService.track('order_completed');
   }
+}`,
+		},
+		"correctness/factory-inject-matches-params": {
+			bad: `@Module({
+  providers: [{
+    provide: 'DATA_SOURCE',
+    useFactory: (config: ConfigService) => createDataSource(config),
+    inject: [ConfigService, Logger],  // 2 tokens but 1 param!
+  }],
+})
+export class AppModule {}`,
+			good: `@Module({
+  providers: [{
+    provide: 'DATA_SOURCE',
+    useFactory: (config: ConfigService, logger: Logger) =>
+      createDataSource(config, logger),
+    inject: [ConfigService, Logger],  // 2 tokens, 2 params
+  }],
+})
+export class AppModule {}`,
+		},
+		"correctness/injectable-must-be-provided": {
+			bad: `@Injectable()
+export class CacheService {  // Not in any module's providers
+  get(key: string) { /* ... */ }
+}`,
+			good: `@Injectable()
+export class CacheService {
+  get(key: string) { /* ... */ }
+}
+
+@Module({ providers: [CacheService] })
+export class CacheModule {}`,
+		},
+		"correctness/no-duplicate-decorators": {
+			bad: `@Controller('users')
+export class UserController {
+  @Get(':id')
+  @Get(':id')  // Duplicate decorator!
+  findOne(@Param('id') id: string) { /* ... */ }
+}`,
+			good: `@Controller('users')
+export class UserController {
+  @Get(':id')
+  findOne(@Param('id') id: string) { /* ... */ }
+}`,
+		},
+		"correctness/param-decorator-matches-route": {
+			bad: `@Controller('users')
+export class UserController {
+  @Get(':id')
+  findOne(@Param('userId') userId: string) {  // 'userId' not in route
+    return this.userService.findOne(userId);
+  }
+}`,
+			good: `@Controller('users')
+export class UserController {
+  @Get(':id')
+  findOne(@Param('id') id: string) {  // 'id' matches :id in route
+    return this.userService.findOne(id);
+  }
+}`,
+		},
+		"correctness/validate-nested-array-each": {
+			bad: `export class CreateOrderDto {
+  @ValidateNested()  // Missing { each: true } for array
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[];
+}`,
+			good: `export class CreateOrderDto {
+  @ValidateNested({ each: true })  // Validates each item in the array
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[];
+}`,
+		},
+		"correctness/validated-non-primitive-needs-type": {
+			bad: `export class CreateUserDto {
+  @ValidateNested()
+  address: AddressDto;  // Missing @Type() — validator can't instantiate
+}`,
+			good: `export class CreateUserDto {
+  @ValidateNested()
+  @Type(() => AddressDto)
+  address: AddressDto;
 }`,
 		},
 
@@ -558,6 +659,70 @@ export class AnalyticsModule {}`,
   imports: [AnalyticsModule],
 })
 export class AppModule {}`,
+		},
+
+		// ── Schema ──
+		"schema/require-primary-key": {
+			bad: `@Entity()
+export class AuditLog {
+  @Column()
+  action: string;
+
+  @Column()
+  timestamp: Date;
+  // No primary key column!
+}`,
+			good: `@Entity()
+export class AuditLog {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  action: string;
+
+  @Column()
+  timestamp: Date;
+}`,
+		},
+		"schema/require-timestamps": {
+			bad: `@Entity()
+export class Product {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  name: string;
+  // No createdAt / updatedAt columns
+}`,
+			good: `@Entity()
+export class Product {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  name: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}`,
+		},
+		"schema/require-cascade-rule": {
+			bad: `@Entity()
+export class User {
+  @OneToMany(() => Order, (order) => order.user, {
+    cascade: true,  // Risky: may unintentionally persist/remove orders
+  })
+  orders: Order[];
+}`,
+			good: `@Entity()
+export class User {
+  @OneToMany(() => Order, (order) => order.user)
+  orders: Order[];
+  // Persist/remove orders explicitly via OrderRepository
+}`,
 		},
 	};
 }

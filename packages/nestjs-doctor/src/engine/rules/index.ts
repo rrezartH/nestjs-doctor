@@ -8,7 +8,10 @@ import { noRepositoryInControllers } from "./definitions/architecture/no-reposit
 import { noServiceLocator } from "./definitions/architecture/no-service-locator.js";
 import { preferConstructorInjection } from "./definitions/architecture/prefer-constructor-injection.js";
 import { requireModuleBoundaries } from "./definitions/architecture/require-module-boundaries.js";
+import { factoryInjectMatchesParams } from "./definitions/correctness/factory-inject-matches-params.js";
+import { injectableMustBeProvided } from "./definitions/correctness/injectable-must-be-provided.js";
 import { noAsyncWithoutAwait } from "./definitions/correctness/no-async-without-await.js";
+import { noDuplicateDecorators } from "./definitions/correctness/no-duplicate-decorators.js";
 import { noDuplicateModuleMetadata } from "./definitions/correctness/no-duplicate-module-metadata.js";
 import { noDuplicateRoutes } from "./definitions/correctness/no-duplicate-routes.js";
 import { noEmptyHandlers } from "./definitions/correctness/no-empty-handlers.js";
@@ -19,9 +22,12 @@ import { noMissingInjectable } from "./definitions/correctness/no-missing-inject
 import { noMissingInterceptorMethod } from "./definitions/correctness/no-missing-interceptor-method.js";
 import { noMissingModuleDecorator } from "./definitions/correctness/no-missing-module-decorator.js";
 import { noMissingPipeMethod } from "./definitions/correctness/no-missing-pipe-method.js";
+import { paramDecoratorMatchesRoute } from "./definitions/correctness/param-decorator-matches-route.js";
 import { preferReadonlyInjection } from "./definitions/correctness/prefer-readonly-injection.js";
 import { requireInjectDecorator } from "./definitions/correctness/require-inject-decorator.js";
 import { requireLifecycleInterface } from "./definitions/correctness/require-lifecycle-interface.js";
+import { validateNestedArrayEach } from "./definitions/correctness/validate-nested-array-each.js";
+import { validatedNonPrimitiveNeedsType } from "./definitions/correctness/validated-non-primitive-needs-type.js";
 import { noBlockingConstructor } from "./definitions/performance/no-blocking-constructor.js";
 import { noDynamicRequire } from "./definitions/performance/no-dynamic-require.js";
 import { noOrphanModules } from "./definitions/performance/no-orphan-modules.js";
@@ -41,6 +47,7 @@ import { noHardcodedSecrets } from "./definitions/security/no-hardcoded-secrets.
 import { noRawEntityInResponse } from "./definitions/security/no-raw-entity-in-response.js";
 import { noSynchronizeInProduction } from "./definitions/security/no-synchronize-in-production.js";
 import { noWeakCrypto } from "./definitions/security/no-weak-crypto.js";
+import { requireGuardsOnEndpoints } from "./definitions/security/require-guards-on-endpoints.js";
 import type { AnyRule } from "./types.js";
 
 export const allRules: AnyRule[] = [
@@ -72,9 +79,15 @@ export const allRules: AnyRule[] = [
 	noMissingModuleDecorator,
 	requireInjectDecorator,
 	noFireAndForgetAsync,
+	paramDecoratorMatchesRoute,
+	factoryInjectMatchesParams,
+	validatedNonPrimitiveNeedsType,
+	noDuplicateDecorators,
+	validateNestedArrayEach,
 
 	// Correctness — project-scoped
 	noMissingInjectable,
+	injectableMustBeProvided,
 
 	// Security
 	noHardcodedSecrets,
@@ -86,6 +99,7 @@ export const allRules: AnyRule[] = [
 	noDangerousRedirects,
 	noSynchronizeInProduction,
 	noRawEntityInResponse,
+	requireGuardsOnEndpoints,
 
 	// Performance — file-scoped
 	noSyncIo,

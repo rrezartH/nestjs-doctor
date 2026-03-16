@@ -24,7 +24,7 @@ export const docsMetadata: Record<string, Metadata> = {
 	"/docs/vscode-extension": {
 		title: "VS Code Extension",
 		description:
-			"Get inline diagnostics from nestjs-doctor directly in your editor. Same 43 rules, zero friction.",
+			"Get inline diagnostics from nestjs-doctor directly in your editor. Same 50 rules, zero friction.",
 	},
 	"/docs/pipeline": {
 		title: "Pipeline Overview",
@@ -84,17 +84,17 @@ export const docsMetadata: Record<string, Metadata> = {
 	"/docs/rules": {
 		title: "Rules Overview",
 		description:
-			"43 built-in rules across five categories: security, correctness, architecture, performance, and schema.",
+			"50 built-in rules across five categories: security, correctness, architecture, performance, and schema.",
 	},
 	"/docs/rules/security": {
 		title: "Security Rules",
 		description:
-			"9 rules that detect security vulnerabilities and unsafe patterns in NestJS applications.",
+			"10 rules that detect security vulnerabilities and unsafe patterns in NestJS applications.",
 	},
 	"/docs/rules/correctness": {
 		title: "Correctness Rules",
 		description:
-			"14 rules that detect bugs, missing decorators, and runtime errors in NestJS applications.",
+			"20 rules that detect bugs, missing decorators, and runtime errors in NestJS applications.",
 	},
 	"/docs/rules/architecture": {
 		title: "Architecture Rules",

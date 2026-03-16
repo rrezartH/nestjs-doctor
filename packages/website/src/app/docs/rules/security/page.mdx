@@ -7,7 +7,7 @@ export const metadata = docsMetadata["/docs/rules/security"];
 
 # Security Rules
 
-9 rules that detect security vulnerabilities and unsafe patterns.
+10 rules that detect security vulnerabilities and unsafe patterns.
 
 | Rule | Severity | What it catches |
 |------|----------|-----------------|
@@ -20,6 +20,7 @@ export const metadata = docsMetadata["/docs/rules/security"];
 | `no-exposed-env-vars` | warning | Direct `process.env` in Injectable/Controller |
 | `no-exposed-stack-trace` | warning | `error.stack` exposed in responses |
 | `no-raw-entity-in-response` | warning | Returning ORM entities directly from controllers |
+| `require-guards-on-endpoints` | warning | Endpoints without `@UseGuards()` at class or method level |
 
 ---
 
@@ -244,6 +245,44 @@ export class UserController {
   async findOne(@Param('id') id: string) {
     const user = await this.userService.findOne(id);
     return new UserResponseDto(user); // Controlled shape
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## require-guards-on-endpoints
+
+Detects controller endpoints that are not protected by `@UseGuards()` at the class or method level.
+
+**Why:** Unguarded endpoints are accessible to anyone. Controllers or individual routes can opt out with `@Public()`, `@AllowAnonymous()`, `@SkipAuth()`, or `@IsPublic()` at the class or method level.
+
+> **Note:** If your app uses a global guard via `APP_GUARD`, all endpoints are already protected. You can disable this rule in your config: `{ "rules": { "security/require-guards-on-endpoints": false } }`.
+
+<CodeGroup labels={["Bad", "Good"]}>
+```typescript
+@Controller('orders')
+export class OrderController {
+  @Get()
+  findAll() {  // No guard!
+    return this.orderService.findAll();
+  }
+}
+```
+```typescript
+@UseGuards(AuthGuard)
+@Controller('orders')
+export class OrderController {
+  @Get()
+  findAll() {
+    return this.orderService.findAll();
+  }
+
+  @Public()
+  @Get('health')
+  health() {
+    return { status: 'ok' };
   }
 }
 ```

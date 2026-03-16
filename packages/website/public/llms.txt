@@ -128,7 +128,7 @@ Supported agents: Claude Code, Amp Code, Cursor, OpenCode, Windsurf, Antigravity
 - `require-inject-decorator` (error) — Untyped constructor param without @Inject()
 - `prefer-readonly-injection` (warning) — Constructor DI params missing readonly
 - `require-lifecycle-interface` (warning) — Lifecycle method without corresponding interface
-- `no-empty-handlers` (warning) — HTTP handler with empty body
+- `no-empty-handlers` (info) — HTTP handler with empty body
 - `no-async-without-await` (warning) — Async function/method with no await
 - `no-duplicate-module-metadata` (warning) — Duplicate entries in @Module() arrays
 - `no-missing-module-decorator` (warning) — Class named *Module without @Module()
@@ -141,7 +141,7 @@ Supported agents: Claude Code, Amp Code, Cursor, OpenCode, Windsurf, Antigravity
 - `no-orm-in-controllers` (error) — PrismaService/EntityManager/DataSource in controllers
 - `no-circular-module-deps` (error) — Cycles in @Module() import graph
 - `no-manual-instantiation` (error) — new SomeService() for injectable classes
-- `no-orm-in-services` (warning) — Services using ORM directly instead of repositories
+- `no-orm-in-services` (info) — Services using ORM directly instead of repositories
 - `no-service-locator` (warning) — ModuleRef.get()/resolve() hides dependencies
 - `prefer-constructor-injection` (warning) — @Inject() property injection
 - `require-module-boundaries` (info) — Deep imports into other modules' internals
@@ -150,9 +150,9 @@ Supported agents: Claude Code, Amp Code, Cursor, OpenCode, Windsurf, Antigravity
 ### Performance (7)
 
 - `no-sync-io` (warning) — readFileSync, writeFileSync, etc.
-- `no-blocking-constructor` (warning) — Loops/await in Injectable/Controller constructors
+- `no-blocking-constructor` (warning) — Loops in Injectable/Controller constructors
 - `no-dynamic-require` (warning) — require() with non-literal argument
-- `no-unused-providers` (warning) — Provider never injected anywhere
+- `no-unused-providers` (warning) — Provider never injected and no self-activating decorators
 - `no-request-scope-abuse` (warning) — Scope.REQUEST creates new instance per request
 - `no-unused-module-exports` (info) — Module exports unused by importers
 - `no-orphan-modules` (info) — Module never imported by any other module

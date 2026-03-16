@@ -9,6 +9,7 @@ import { noExposedStackTrace } from "../../../src/engine/rules/definitions/secur
 import { noRawEntityInResponse } from "../../../src/engine/rules/definitions/security/no-raw-entity-in-response.js";
 import { noSynchronizeInProduction } from "../../../src/engine/rules/definitions/security/no-synchronize-in-production.js";
 import { noWeakCrypto } from "../../../src/engine/rules/definitions/security/no-weak-crypto.js";
+import { requireGuardsOnEndpoints } from "../../../src/engine/rules/definitions/security/require-guards-on-endpoints.js";
 import type { Rule } from "../../../src/engine/rules/types.js";
 
 function runRule(rule: Rule, code: string, filePath = "test.ts"): Diagnostic[] {
@@ -363,6 +364,120 @@ describe("no-raw-entity-in-response", () => {
       @Injectable()
       export class UsersService {
         findAll(): UserEntity[] { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+});
+
+describe("require-guards-on-endpoints", () => {
+	it("flags unguarded endpoint", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Controller, Get } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get()
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(1);
+		expect(diags[0].message).toContain("findAll");
+	});
+
+	it("allows endpoint with method-level @UseGuards()", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Controller, Get, UseGuards } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        @Get()
+        @UseGuards(AuthGuard)
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows all endpoints with class-level @UseGuards()", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+      @Controller('users')
+      @UseGuards(AuthGuard)
+      export class UsersController {
+        @Get()
+        findAll() { return []; }
+        @Post()
+        create() { return {}; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("skips methods with @Public() decorator", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Controller, Get } from '@nestjs/common';
+      @Controller('health')
+      export class HealthController {
+        @Get()
+        @Public()
+        check() { return { status: 'ok' }; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("skips all endpoints when class has @Public() decorator", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Controller, Get, Post } from '@nestjs/common';
+      @Controller('health')
+      @Public()
+      export class HealthController {
+        @Get()
+        check() { return { status: 'ok' }; }
+        @Post()
+        reset() { return {}; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("does not flag non-controller classes", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Injectable } from '@nestjs/common';
+      @Injectable()
+      export class UsersService {
+        findAll() { return []; }
+      }
+    `
+		);
+		expect(diags).toHaveLength(0);
+	});
+
+	it("does not flag non-handler methods", () => {
+		const diags = runRule(
+			requireGuardsOnEndpoints,
+			`
+      import { Controller } from '@nestjs/common';
+      @Controller('users')
+      export class UsersController {
+        helperMethod() { return 42; }
       }
     `
 		);

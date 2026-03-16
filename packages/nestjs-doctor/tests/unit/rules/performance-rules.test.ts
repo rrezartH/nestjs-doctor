@@ -198,6 +198,84 @@ describe("no-unused-providers", () => {
 		expect(diags[0].message).toContain("UnusedService");
 	});
 
+	it("allows provider with @Cron() method decorator", () => {
+		const diags = runProjectRule(noUnusedProviders, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [HealthCron] })
+        export class AppModule {}
+      `,
+			"health.cron.ts": `
+        import { Injectable } from '@nestjs/common';
+        import { Cron } from '@nestjs/schedule';
+        @Injectable()
+        export class HealthCron {
+          @Cron('0 */5 * * * *')
+          async handleCron() {}
+        }
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows provider with @OnEvent() method decorator", () => {
+		const diags = runProjectRule(noUnusedProviders, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [OrderListener] })
+        export class AppModule {}
+      `,
+			"order.listener.ts": `
+        import { Injectable } from '@nestjs/common';
+        import { OnEvent } from '@nestjs/event-emitter';
+        @Injectable()
+        export class OrderListener {
+          @OnEvent('order.created')
+          handleOrderCreated() {}
+        }
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows provider with Subscriber suffix", () => {
+		const diags = runProjectRule(noUnusedProviders, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [UserSubscriber] })
+        export class AppModule {}
+      `,
+			"user.subscriber.ts": `
+        import { Injectable } from '@nestjs/common';
+        @Injectable()
+        export class UserSubscriber {
+          afterInsert() {}
+        }
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
+	it("allows provider with @Process() method decorator", () => {
+		const diags = runProjectRule(noUnusedProviders, {
+			"app.module.ts": `
+        import { Module } from '@nestjs/common';
+        @Module({ providers: [EmailProcessor] })
+        export class AppModule {}
+      `,
+			"email.processor.ts": `
+        import { Injectable } from '@nestjs/common';
+        import { Process } from '@nestjs/bull';
+        @Injectable()
+        export class EmailProcessor {
+          @Process('send')
+          handleSend() {}
+        }
+      `,
+		});
+		expect(diags).toHaveLength(0);
+	});
+
 	it("allows provider injected in another service", () => {
 		const diags = runProjectRule(noUnusedProviders, {
 			"app.module.ts": `

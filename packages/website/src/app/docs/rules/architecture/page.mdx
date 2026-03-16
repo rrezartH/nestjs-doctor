@@ -16,7 +16,7 @@ export const metadata = docsMetadata["/docs/rules/architecture"];
 | `no-orm-in-controllers` | error | PrismaService / EntityManager / DataSource in controllers |
 | `no-circular-module-deps` | error | Cycles in `@Module()` import graph — names the providers to extract |
 | `no-manual-instantiation` | error | `new SomeService()` for injectable classes |
-| `no-orm-in-services` | warning | Services using ORM directly (should use repositories) |
+| `no-orm-in-services` | info | Services using ORM directly (should use repositories) |
 | `no-service-locator` | warning | `ModuleRef.get()`/`resolve()` usage |
 | `prefer-constructor-injection` | warning | `@Inject()` property injection |
 | `require-module-boundaries` | info | Deep imports into other modules' internals |
@@ -217,6 +217,8 @@ If your project intentionally allows manual construction for specific classes
 Detects services using ORM types directly instead of through a repository layer.
 
 **Why:** When services depend on ORM types directly, switching ORMs or data sources requires changing every service. A repository layer provides a clean abstraction boundary.
+
+> **Note:** If your project follows the [official NestJS Prisma recipe](https://docs.nestjs.com/recipes/prisma) (injecting `PrismaService` directly), you can disable this rule in your configuration.
 
 <CodeGroup labels={["Bad", "Good"]}>
 ```typescript

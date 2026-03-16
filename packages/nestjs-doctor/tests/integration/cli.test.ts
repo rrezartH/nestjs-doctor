@@ -433,7 +433,7 @@ describe("scanner integration", () => {
 		);
 		expect(orphanDiags).toHaveLength(0);
 
-		// Clean score with zero diagnostics
+		// Clean score
 		expect(result.score.value).toBeGreaterThanOrEqual(90);
 		expect(result.diagnostics).toHaveLength(0);
 	});
@@ -778,6 +778,88 @@ describe("scanner integration", () => {
 			const names = monoResult.result.subProjects.map((p) => p.name);
 			expect(names).not.toContain("@lerna/frontend");
 		});
+	});
+
+	it("detects all correctness rule violations in bad-correctness fixture", async () => {
+		const targetPath = resolve(FIXTURES, "bad-correctness/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildAnalysisContext(targetPath, scanConfig);
+		const rawOutput = diagnose(context);
+		const { result } = buildResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
+
+		expect(result.diagnostics.length).toBeGreaterThan(0);
+
+		for (const ruleId of [
+			"correctness/param-decorator-matches-route",
+			"correctness/factory-inject-matches-params",
+			"correctness/validated-non-primitive-needs-type",
+			"correctness/no-duplicate-decorators",
+			"correctness/validate-nested-array-each",
+			"correctness/injectable-must-be-provided",
+		]) {
+			const diags = result.diagnostics.filter((d) => d.rule === ruleId);
+			expect(
+				diags.length,
+				`Expected at least 1 diagnostic for ${ruleId}`
+			).toBeGreaterThan(0);
+		}
+	});
+
+	it("detects security rule violations in bad-security fixture", async () => {
+		const targetPath = resolve(FIXTURES, "bad-security/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildAnalysisContext(targetPath, scanConfig);
+		const rawOutput = diagnose(context);
+		const { result } = buildResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
+
+		expect(result.diagnostics.length).toBeGreaterThan(0);
+
+		const diags = result.diagnostics.filter(
+			(d) => d.rule === "security/require-guards-on-endpoints"
+		);
+		expect(
+			diags.length,
+			"Expected at least 1 diagnostic for security/require-guards-on-endpoints"
+		).toBeGreaterThan(0);
+	});
+
+	it("does not flag self-activating providers in bad-performance fixture", async () => {
+		const targetPath = resolve(FIXTURES, "bad-performance/src");
+		const scanConfig = await resolveScanConfig(targetPath);
+		const context = await buildAnalysisContext(targetPath, scanConfig);
+		const rawOutput = diagnose(context);
+		const { result } = buildResult(
+			context,
+			rawOutput,
+			scanConfig.customRuleWarnings
+		);
+
+		const unusedDiags = result.diagnostics.filter(
+			(d) => d.rule === "performance/no-unused-providers"
+		);
+
+		// HealthCron should NOT be flagged (has @Cron decorator)
+		expect(
+			unusedDiags.filter((d) => d.message.includes("HealthCron"))
+		).toHaveLength(0);
+
+		// HealthService should NOT be flagged (injected by HealthCron)
+		expect(
+			unusedDiags.filter((d) => d.message.includes("HealthService"))
+		).toHaveLength(0);
+
+		// UnusedService SHOULD be flagged
+		expect(
+			unusedDiags.filter((d) => d.message.includes("UnusedService"))
+		).toHaveLength(1);
 	});
 
 	it("does not flag migration identifiers as secrets in false-positives fixture", async () => {

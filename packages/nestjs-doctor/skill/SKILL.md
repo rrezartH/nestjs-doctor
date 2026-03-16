@@ -102,7 +102,7 @@ For each diagnostic to fix:
 - **no-sync-io**: Replace synchronous I/O (`readFileSync`, `writeFileSync`, etc.) with async equivalents (`readFile`, `writeFile` from `fs/promises`).
 - **no-blocking-constructor**: Move async operations and loops out of the constructor into `onModuleInit()` lifecycle hook. Implement `OnModuleInit` interface.
 - **no-dynamic-require**: Replace `require(variable)` with a static import or a switch/map pattern that uses static `require()` calls.
-- **no-unused-providers**: Remove the unused provider from the module's providers array, or start using it. If it's intended for external consumers, add it to the module's exports.
+- **no-unused-providers**: Remove the unused provider from the module's providers array, or start using it. Providers with self-activating decorators (@Cron, @OnEvent, @Process) are automatically excluded. If it's intended for external consumers, add it to the module's exports.
 - **no-request-scope-abuse**: Remove `Scope.REQUEST` unless the provider genuinely needs per-request state (e.g., request-scoped context like `REQUEST` object). Use `Scope.DEFAULT` (singleton) or `Scope.TRANSIENT` instead. Remember that request scope propagates to all dependents.
 - **no-unused-module-exports**: Remove the unused export from the module's exports array, or start importing the module where the exported provider is needed.
 - **no-orphan-modules**: Import this module in another module that needs it, or remove it if it's truly unused. If it's the root module, this can be ignored.

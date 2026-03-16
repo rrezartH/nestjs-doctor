@@ -9,7 +9,7 @@ export const noEmptyHandlers: Rule = {
 	meta: {
 		id: "correctness/no-empty-handlers",
 		category: "correctness",
-		severity: "warning",
+		severity: "info",
 		description: "Controller HTTP handlers should not have empty bodies",
 		help: "Add implementation to the handler method or remove it if unnecessary.",
 	},

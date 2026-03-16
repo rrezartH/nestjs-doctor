@@ -29,7 +29,12 @@ export const requireLifecycleInterface: Rule = {
 					continue;
 				}
 
-				if (!implementedInterfaces.some((i) => i.includes(expectedInterface))) {
+				if (
+					!implementedInterfaces.some(
+						(i) =>
+							i === expectedInterface || i.startsWith(`${expectedInterface}<`)
+					)
+				) {
 					context.report({
 						filePath: context.filePath,
 						message: `Class '${cls.getName()}' has '${methodName}()' but does not implement '${expectedInterface}'.`,

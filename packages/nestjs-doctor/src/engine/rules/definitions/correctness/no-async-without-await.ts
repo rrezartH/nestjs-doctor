@@ -29,7 +29,7 @@ export const noAsyncWithoutAwait: Rule = {
 		severity: "warning",
 		description:
 			"Async functions/methods should contain at least one await expression",
-		help: "Either add an await expression or remove the async keyword.",
+		help: "Either add an await expression or remove the async keyword. HTTP handlers with route decorators are exempted, as async is conventional for controller methods.",
 	},
 
 	check(context) {

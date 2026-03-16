@@ -12,9 +12,9 @@ export const metadata = docsMetadata["/docs/rules/performance"];
 | Rule | Severity | What it catches |
 |------|----------|-----------------|
 | `no-sync-io` | warning | `readFileSync`, `writeFileSync`, etc. |
-| `no-blocking-constructor` | warning | Loops/await in Injectable/Controller constructors |
+| `no-blocking-constructor` | warning | Loops in Injectable/Controller constructors |
 | `no-dynamic-require` | warning | `require()` with non-literal argument |
-| `no-unused-providers` | warning | Provider never injected anywhere |
+| `no-unused-providers` | warning | Provider never injected and no self-activating decorators |
 | `no-request-scope-abuse` | warning | `Scope.REQUEST` on frequently used providers |
 | `no-unused-module-exports` | info | Module exports unused by importers |
 | `no-orphan-modules` | info | Module never imported by any other module |
@@ -52,9 +52,9 @@ export class ConfigService {
 
 ## no-blocking-constructor
 
-Detects loops or `await` expressions inside Injectable/Controller constructors.
+Detects loops inside Injectable/Controller constructors.
 
-**Why:** Constructors run during module initialization. Blocking operations (loops over large datasets, async calls) delay application startup and can cause timeouts.
+**Why:** Constructors run during module initialization. Blocking operations (loops over large datasets) delay application startup and can cause timeouts. Constructors cannot be async, so asynchronous work should always use lifecycle hooks.
 
 <CodeGroup labels={["Bad", "Good"]}>
 ```typescript
@@ -120,7 +120,7 @@ export class PluginLoader {
 
 Detects `@Injectable()` providers that are never injected by any other provider or controller.
 
-**Why:** Unused providers are dead code. They increase module initialization time, obscure the dependency graph, and should be removed.
+**Why:** Unused providers are dead code. They increase module initialization time, obscure the dependency graph, and should be removed. Self-activating providers — classes that use framework decorators like `@Cron()`, `@OnEvent()`, or `@Process()` — are automatically excluded since they are instantiated and activated by the framework without needing to be injected elsewhere.
 
 <CodeGroup labels={["Bad", "Good"]}>
 ```typescript
@@ -140,7 +140,7 @@ export class UserModule {}
 ```
 </CodeGroup>
 
-**Note:** This rule skips infrastructure classes (Guards, Interceptors, Filters, Middleware, Strategies) since they may be used declaratively via decorators rather than injected.
+**Note:** This rule skips infrastructure classes (Guards, Interceptors, Filters, Middleware, Strategies, Subscribers, etc.) and self-activating providers with framework decorators (`@Cron`, `@OnEvent`, `@Process`, `@Interval`, `@SubscribeMessage`, etc.).
 
 ---
 

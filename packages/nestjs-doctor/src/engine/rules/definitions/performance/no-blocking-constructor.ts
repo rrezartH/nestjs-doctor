@@ -8,7 +8,6 @@ const BLOCKING_KINDS = new Set([
 	SyntaxKind.ForInStatement,
 	SyntaxKind.WhileStatement,
 	SyntaxKind.DoStatement,
-	SyntaxKind.AwaitExpression,
 ]);
 
 export const noBlockingConstructor: Rule = {
@@ -18,7 +17,7 @@ export const noBlockingConstructor: Rule = {
 		severity: "warning",
 		description:
 			"Constructors in Injectable/Controller classes should not contain heavy operations",
-		help: "Move complex initialization logic to onModuleInit() lifecycle method instead.",
+		help: "Move heavy initialization logic to the onModuleInit() lifecycle method. Constructors cannot be async, so asynchronous work should always use lifecycle hooks.",
 	},
 
 	check(context) {
